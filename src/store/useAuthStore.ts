@@ -9,6 +9,7 @@ export interface User {
     role: string;
     emp_no?: string;
     employeeRef?: string;
+    phone?: string;
     department?: { _id: string; name: string };
     division?: { _id: string; name: string };
     isActive?: boolean;
@@ -20,10 +21,16 @@ export interface Employee {
     emp_no: string;
     employee_name: string;
     joining_date?: string;
-    designation?: { name: string };
-    department?: { name: string };
-    division?: { name: string };
-    reporting_manager?: { employee_name: string };
+    designation?: { name: string; _id?: string };
+    department?: { name: string; _id?: string };
+    department_id?: string | { _id?: string; name?: string };
+    division?: { name: string; _id?: string };
+    division_id?: string | { _id?: string; name?: string };
+    reporting_manager?: { employee_name?: string; name?: string; email?: string };
+    reporting_to?: Array<{ _id?: string; name?: string; email?: string; role?: string } | string>;
+    dynamicFields?: {
+        reporting_to?: Array<{ _id?: string; name?: string; email?: string; role?: string } | string>;
+    };
     shiftId?: { name: string; startTime: string; endTime: string };
     employment_status?: string;
     blood_group?: string;

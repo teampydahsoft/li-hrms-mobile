@@ -1,134 +1,559 @@
-import { View, Text, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import {
+    View,
+    Text,
+    ScrollView,
+    TouchableOpacity,
+    ActivityIndicator,
+    RefreshControl,
+} from 'react-native';
 import { MotiView } from 'moti';
-import { LayoutDashboard, Users, Calendar, Clock, Bell, User, ArrowUpRight } from 'lucide-react-native';
+import {
+    LayoutDashboard,
+    Calendar,
+    Clock,
+    Bell,
+    Users,
+    CheckCircle2,
+    Star,
+    Coffee,
+    User,
+    ChevronRight,
+    Building2,
+} from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
+import { useAuthStore } from '../../src/store/useAuthStore';
+import { api } from '../../src/api/client';
+import { formatTimeIST, todayYmdIST } from '../../src/utils/dateIST';
 
-const { width } = Dimensions.get('window');
+type DashboardStats = {
+    totalEmployees?: number;
+    pendingLeaves?: number;
+    approvedLeaves?: number;
+    todayPresent?: number;
+    todayAbsent?: number;
+    upcomingHolidays?: number;
+    myPendingLeaves?: number;
+    myApprovedLeaves?: number;
+    teamPendingApprovals?: number;
+    efficiencyScore?: number;
+    departmentFeed?: Array<Record<string, unknown>>;
+    leaveBalance?: number;
+    compensatoryOffBalance?: number | null;
+    yearlyClCreditDaysPosted?: number | null;
+    yearlyCclCreditDaysPosted?: number | null;
+    financialYearRegister?: string | null;
+};
+
+type AttendanceDay = {
+    status?: string;
+    inTime?: string | null;
+    outTime?: string | null;
+    isLateIn?: boolean;
+    shifts?: Array<{
+        inTime?: string | null;
+        outTime?: string | null;
+        shiftEndTime?: string | null;
+        shiftName?: string;
+        isLateIn?: boolean;
+        shiftId?: { name?: string } | unknown;
+    }>;
+    shiftId?: { name?: string } | unknown;
+};
+
+function isPresentRow(data: AttendanceDay | null): boolean {
+    if (!data) return false;
+    const s = (data.status || '').toUpperCase();
+    return s === 'PRESENT' || s === 'PARTIAL' || s === 'HALF_DAY';
+}
+
+function isNonWorkingCalendarDay(data: AttendanceDay | null): boolean {
+    const s = (data?.status || '').toUpperCase();
+    return s === 'HOLIDAY' || s === 'WEEK_OFF';
+}
+
+function workStatusHeadline(data: AttendanceDay | null): string {
+    if (!data) return 'Not clocked in';
+    const s = (data.status || '').toUpperCase();
+    if (s === 'HOLIDAY') return 'Public holiday';
+    if (s === 'WEEK_OFF') return 'Weekly off';
+    if (s === 'LEAVE') return 'On leave';
+    if (s === 'OD') return 'On duty';
+    if (isPresentRow(data)) return 'Clocked in';
+    return 'Not clocked in';
+}
+
+function statusDisplay(data: AttendanceDay | null): string {
+    if (!data) return 'No record';
+    return (data.status || '—').replace(/_/g, ' ');
+}
+
+function pickInTime(rec: AttendanceDay | null): string | null | undefined {
+    if (!rec) return undefined;
+    if (rec.inTime) return rec.inTime;
+    return rec.shifts?.[0]?.inTime;
+}
+
+function pickOutTime(rec: AttendanceDay | null): string | null | undefined {
+    if (!rec) return undefined;
+    if (rec.outTime) return rec.outTime;
+    return rec.shifts?.[0]?.outTime;
+}
+
+function expectedOutDisplay(rec: AttendanceDay | null): string {
+    const direct = pickOutTime(rec);
+    if (direct) return formatTimeIST(direct);
+    const end = rec?.shifts?.[0]?.shiftEndTime;
+    if (end) {
+        const date = todayYmdIST();
+        return formatTimeIST(`${date}T${end}`);
+    }
+    return '--:--';
+}
+
+function DashboardMetricCard({
+    title,
+    value,
+    description,
+    icon: Icon,
+    iconColor,
+    iconBg,
+}: {
+    title: string;
+    value: string | number;
+    description: string;
+    icon: typeof Calendar;
+    iconColor: string;
+    iconBg: string;
+}) {
+    return (
+        <View className="mb-4 w-[48%] rounded-2xl border border-neutral-100 bg-white p-4 shadow-sm">
+            <View className="mb-3 flex-row items-start justify-between">
+                <View className="min-w-0 flex-1 pr-2">
+                    <Text className="text-[10px] font-black uppercase tracking-wider text-neutral-400">{title}</Text>
+                    <Text className="mt-1 text-xl font-black text-neutral-900" numberOfLines={1}>
+                        {value}
+                    </Text>
+                </View>
+                <View className="rounded-xl border border-neutral-100 p-2" style={{ backgroundColor: iconBg }}>
+                    <Icon size={20} color={iconColor} strokeWidth={2.5} />
+                </View>
+            </View>
+            <Text className="text-[10px] font-medium text-neutral-500" numberOfLines={3}>
+                {description}
+            </Text>
+        </View>
+    );
+}
+
+function QuickLinkRow({
+    label,
+    desc,
+    onPress,
+    icon: Icon,
+    color,
+    bg,
+}: {
+    label: string;
+    desc: string;
+    onPress: () => void;
+    icon: typeof Calendar;
+    color: string;
+    bg: string;
+}) {
+    return (
+        <TouchableOpacity
+            onPress={onPress}
+            activeOpacity={0.85}
+            className="mb-3 flex-row items-center rounded-2xl border border-neutral-100 bg-white p-4"
+        >
+            <View className="rounded-xl p-3" style={{ backgroundColor: bg }}>
+                <Icon size={20} color={color} strokeWidth={2.5} />
+            </View>
+            <View className="min-w-0 flex-1 px-3">
+                <Text className="text-xs font-black uppercase tracking-tight text-neutral-900">{label}</Text>
+                <Text className="text-[10px] text-neutral-500">{desc}</Text>
+            </View>
+            <ChevronRight size={18} color="#CBD5E1" strokeWidth={2.5} />
+        </TouchableOpacity>
+    );
+}
 
 export default function DashboardScreen() {
+    const router = useRouter();
+    const { user } = useAuthStore();
+    const empNo = (user?.emp_no || '').trim().toUpperCase();
+
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [stats, setStats] = useState<DashboardStats>({});
+    const [attendanceRow, setAttendanceRow] = useState<AttendanceDay | null>(null);
+
+    const userRole = user?.role || 'employee';
+
+    const loadData = useCallback(async () => {
+        try {
+            const today = todayYmdIST();
+
+            const [statsRes, detailRes] = await Promise.all([
+                api.getDashboardStats(),
+                empNo ? api.getAttendanceDetail(empNo, today) : Promise.resolve({ status: 404, data: {} }),
+            ]);
+
+            if (statsRes.status !== 200 || !statsRes.data?.success) {
+                setStats({});
+            } else {
+                const statsBody = statsRes.data;
+                if (statsBody.data && typeof statsBody.data === 'object' && !Array.isArray(statsBody.data)) {
+                    setStats(statsBody.data as DashboardStats);
+                } else {
+                    setStats({});
+                }
+            }
+
+            const d = detailRes.data as { success?: boolean; data?: unknown };
+            if (
+                detailRes.status === 200 &&
+                d.success &&
+                d.data &&
+                typeof d.data === 'object' &&
+                !Array.isArray(d.data)
+            ) {
+                setAttendanceRow(d.data as AttendanceDay);
+            } else {
+                setAttendanceRow(null);
+            }
+        } catch {
+            setStats({});
+            setAttendanceRow(null);
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
+    }, [empNo]);
+
+    useFocusEffect(
+        useCallback(() => {
+            loadData();
+        }, [loadData])
+    );
+
+    const headerDate = useMemo(
+        () =>
+            new Date().toLocaleDateString('en-IN', {
+                weekday: 'long',
+                day: 'numeric',
+                month: 'short',
+                timeZone: 'Asia/Kolkata',
+            }),
+        []
+    );
+
+    const showGlobalAttendanceCard = userRole !== 'super_admin';
+
+    const employeeCco =
+        stats.compensatoryOffBalance != null && Number.isFinite(Number(stats.compensatoryOffBalance))
+            ? Number(stats.compensatoryOffBalance)
+            : null;
+    const fyLabel = stats.financialYearRegister || '';
+    const clPosted = stats.yearlyClCreditDaysPosted ?? null;
+    const cclPosted = stats.yearlyCclCreditDaysPosted ?? null;
+    const ccoDescription =
+        fyLabel && clPosted != null && cclPosted != null
+            ? `FY ${fyLabel}: ${clPosted} CL credited · ${cclPosted} CCL credited`
+            : 'From leave register; FY credits when available';
+
+    if (loading && !refreshing) {
+        return (
+            <View className="flex-1 items-center justify-center bg-white">
+                <ActivityIndicator size="large" color="#059669" />
+            </View>
+        );
+    }
+
+    const nonWorking = isNonWorkingCalendarDay(attendanceRow);
+
     return (
         <View className="flex-1 bg-white">
             <StatusBar style="dark" />
-
-            {/* Standardized Premium Background */}
-            <LinearGradient
-                colors={['#FFFFFE', '#F7FEE7', '#FFFFFF']}
-                className="absolute inset-0"
-            />
+            <LinearGradient colors={['#FFFFFE', '#F7FEE7', '#FFFFFF']} className="absolute inset-0" />
 
             <SafeAreaView className="flex-1">
-                <ScrollView className="flex-1 px-8 pt-6" showsVerticalScrollIndicator={false}>
-                    {/* Premium Header */}
-                    <MotiView
-                        from={{ opacity: 0, translateY: -20 }}
-                        animate={{ opacity: 1, translateY: 0 }}
-                        className="flex-row justify-between items-start mb-10"
-                    >
-                        <View>
-                            <View className="flex-row items-center mb-1">
-                                <View className="w-8 h-1 bg-primary rounded-full mr-2" />
-                                <Text className="text-neutral-400 font-bold tracking-widest text-[10px] uppercase">Tuesday, 20 Jan</Text>
+                <ScrollView
+                    className="flex-1 px-6 pt-5"
+                    showsVerticalScrollIndicator={false}
+                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} />}
+                >
+                    <MotiView from={{ opacity: 0, translateY: -12 }} animate={{ opacity: 1, translateY: 0 }} className="mb-6 flex-row items-start justify-between">
+                        <View className="min-w-0 flex-1 pr-3">
+                            <View className="mb-1 flex-row items-center">
+                                <View className="mr-2 h-1 w-8 rounded-full bg-emerald-500" />
+                                <Text className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">{headerDate}</Text>
                             </View>
-                            <Text className="text-neutral-900 text-4xl font-black tracking-tight">Main<Text className="text-primary">.</Text>Dash</Text>
+                            <Text className="text-3xl font-black tracking-tight text-neutral-900" numberOfLines={2}>
+                                Welcome, {user?.name?.split(' ')[0] || 'there'}
+                            </Text>
+                            <Text className="mt-1 text-xs font-medium text-neutral-500">Here&apos;s what&apos;s happening today</Text>
                         </View>
-                        <TouchableOpacity className="w-14 h-14 bg-white rounded-2xl items-center justify-center shadow-sm border border-neutral-100">
-                            <Bell size={24} color="#0F172A" strokeWidth={2.5} />
-                            <View className="absolute top-4 right-4 w-2.5 h-2.5 bg-primary rounded-full border-2 border-white" />
+                        <TouchableOpacity className="h-14 w-14 items-center justify-center rounded-2xl border border-neutral-100 bg-white shadow-sm">
+                            <Bell size={22} color="#0F172A" strokeWidth={2.5} />
                         </TouchableOpacity>
                     </MotiView>
 
-                    {/* High-Fidelity Highlight Card */}
-                    <MotiView
-                        from={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: 200 }}
-                        className="mb-10"
-                    >
-                        <LinearGradient
-                            colors={['#10B981', '#059669']}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            className="rounded-[40px] p-8 shadow-2xl shadow-emerald-500/30"
-                        >
-                            <View className="flex-row justify-between items-start mb-6">
-                                <View>
-                                    <Text className="text-white/70 text-xs font-black uppercase tracking-widest mb-1">Company Status</Text>
-                                    <Text className="text-white text-4xl font-black tracking-tighter">92<Text className="text-emerald-300">%</Text></Text>
-                                </View>
-                                <View className="w-14 h-14 bg-white/10 rounded-3xl items-center justify-center border border-white/20">
-                                    <Users size={28} color="white" strokeWidth={2.5} />
-                                </View>
-                            </View>
-                            <View className="flex-row items-center justify-between">
-                                <View className="h-2 flex-1 bg-white/20 rounded-full mr-6 overflow-hidden">
-                                    <View className="h-full w-[92%] bg-white rounded-full" />
-                                </View>
-                                <View className="flex-row items-center">
-                                    <ArrowUpRight size={14} color="#D1FAE5" strokeWidth={3} />
-                                    <Text className="text-white text-xs font-black ml-1">8.2%</Text>
-                                </View>
-                            </View>
-                        </LinearGradient>
-                    </MotiView>
-
-                    {/* Quick Access Grid */}
-                    <Text className="text-neutral-900 text-lg font-black tracking-tight mb-6">Core Operations</Text>
-                    <View className="flex-row flex-wrap justify-between gap-5 mb-10">
-                        {[
-                            { label: 'Attendance', icon: Clock, color: '#10B981', bg: '#ECFDF5' },
-                            { label: 'Leaves', icon: Calendar, color: '#F59E0B', bg: '#FFFBEB' },
-                            { label: 'Profile', icon: User, color: '#6366F1', bg: '#EEF2FF' },
-                            { label: 'Analytics', icon: LayoutDashboard, color: '#F43F5E', bg: '#FFF1F2' },
-                        ].map((item, idx) => (
-                            <MotiView
-                                key={idx}
-                                from={{ opacity: 0, translateY: 10 }}
-                                animate={{ opacity: 1, translateY: 0 }}
-                                transition={{ delay: 300 + (idx * 100) }}
-                                className="w-[46.5%] bg-white p-6 rounded-[32px] border-2 border-neutral-50 shadow-sm shadow-neutral-100 items-center justify-center"
+                    {showGlobalAttendanceCard && (
+                        <MotiView from={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="mb-8 overflow-hidden rounded-3xl">
+                            <LinearGradient
+                                colors={['#059669', '#10B981']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                className="p-5"
                             >
-                                <View style={{ backgroundColor: item.bg }} className="w-16 h-16 rounded-[24px] items-center justify-center mb-4 border border-white shadow-inner">
-                                    <item.icon size={28} color={item.color} strokeWidth={2.5} />
-                                </View>
-                                <Text className="text-neutral-900 font-bold text-sm tracking-tight">{item.label}</Text>
-                            </MotiView>
-                        ))}
-                    </View>
-
-                    {/* Approvals Section */}
-                    <View className="flex-row justify-between items-center mb-6">
-                        <Text className="text-neutral-900 text-lg font-black tracking-tight">Pending Tasks</Text>
-                        <TouchableOpacity>
-                            <Text className="text-primary font-bold text-xs uppercase tracking-widest">View All</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    <MotiView
-                        from={{ opacity: 0, translateY: 20 }}
-                        animate={{ opacity: 1, translateY: 0 }}
-                        transition={{ delay: 700 }}
-                        className="bg-white rounded-[32px] p-8 border-2 border-neutral-50 shadow-xl shadow-neutral-100/50 mb-24"
-                    >
-                        <View className="flex-row items-center justify-between mb-6">
-                            <View className="flex-row -space-x-4">
-                                {[1, 2, 3].map(i => (
-                                    <View key={i} className="w-12 h-12 rounded-full bg-neutral-100 border-4 border-white items-center justify-center shadow-sm">
-                                        <User size={18} color="#94A6B8" strokeWidth={2.5} />
+                                <View className="mb-4 flex-row flex-wrap items-center justify-between gap-3">
+                                    <View className="flex-row items-center gap-3">
+                                        <View className="h-12 w-12 items-center justify-center rounded-2xl border border-white/20 bg-white/15">
+                                            <Clock size={26} color="white" strokeWidth={2.5} />
+                                        </View>
+                                        <View>
+                                            <Text className="text-[10px] font-bold uppercase tracking-widest text-white/70">Your work status</Text>
+                                            <Text className="text-lg font-black text-white">{workStatusHeadline(attendanceRow)}</Text>
+                                        </View>
                                     </View>
-                                ))}
-                                <View className="w-12 h-12 rounded-full bg-primary/10 border-4 border-white items-center justify-center shadow-sm">
-                                    <Text className="text-primary text-xs font-black">+8</Text>
+                                    <View
+                                        className={`rounded-2xl px-4 py-2 ${
+                                            isPresentRow(attendanceRow) ? 'bg-white' : 'border border-white/25 bg-white/10'
+                                        }`}
+                                    >
+                                        <Text
+                                            className={`text-[10px] font-black uppercase tracking-widest ${
+                                                isPresentRow(attendanceRow) ? 'text-emerald-700' : 'text-white'
+                                            }`}
+                                        >
+                                            {statusDisplay(attendanceRow)}
+                                        </Text>
+                                    </View>
                                 </View>
-                            </View>
-                            <View className="bg-emerald-50 px-4 py-2 rounded-full border border-emerald-100">
-                                <Text className="text-emerald-600 text-[10px] font-black uppercase tracking-widest">Active Now</Text>
-                            </View>
+
+                                {nonWorking ? (
+                                    <View className="rounded-2xl border border-white/15 bg-black/10 px-4 py-4">
+                                        <Text className="text-center text-sm font-bold text-white">
+                                            {(attendanceRow?.status || '').toUpperCase() === 'HOLIDAY'
+                                                ? 'Company holiday — no regular attendance is expected today (same rules as workspace calendar).'
+                                                : 'Weekly off — no regular shift attendance expected today.'}
+                                        </Text>
+                                    </View>
+                                ) : (
+                                    <>
+                                        <View className="flex-row flex-wrap gap-2">
+                                            <View className="min-w-[44%] flex-1 rounded-2xl border border-white/15 bg-black/10 px-4 py-3">
+                                                <Text className="text-[9px] font-bold uppercase text-white/60">In time</Text>
+                                                <Text className="font-mono text-base font-black text-white">
+                                                    {pickInTime(attendanceRow) ? formatTimeIST(pickInTime(attendanceRow)!) : '--:--'}
+                                                </Text>
+                                            </View>
+                                            <View className="min-w-[44%] flex-1 rounded-2xl border border-white/15 bg-black/10 px-4 py-3">
+                                                <Text className="text-[9px] font-bold uppercase text-white/60">Expected out</Text>
+                                                <Text className="font-mono text-base font-black text-white">
+                                                    {expectedOutDisplay(attendanceRow)}
+                                                </Text>
+                                            </View>
+                                        </View>
+
+                                        {attendanceRow?.shifts && attendanceRow.shifts.length > 0 ? (
+                                            <View className="mt-3 rounded-2xl border border-white/10 bg-black/10 p-3">
+                                                {attendanceRow.shifts.map((shift, idx) => (
+                                                    <View key={idx} className={idx > 0 ? 'mt-3 border-t border-white/10 pt-3' : ''}>
+                                                        <Text className="text-[9px] font-semibold uppercase text-emerald-100">Shift</Text>
+                                                        <Text className="text-xs font-bold text-white">
+                                                            {shift.shiftName ||
+                                                                (typeof shift.shiftId === 'object' && shift.shiftId && 'name' in shift.shiftId
+                                                                    ? String((shift.shiftId as { name?: string }).name)
+                                                                    : 'General')}
+                                                        </Text>
+                                                        <View className="mt-2 flex-row justify-between">
+                                                            <Text className="text-xs text-white/90">{formatTimeIST(shift.inTime)}</Text>
+                                                            <Text className="text-xs text-white/90">{formatTimeIST(shift.outTime)}</Text>
+                                                        </View>
+                                                    </View>
+                                                ))}
+                                            </View>
+                                        ) : attendanceRow?.inTime || attendanceRow?.outTime ? (
+                                            <View className="mt-3 rounded-2xl border border-white/10 bg-black/10 p-3">
+                                                <Text className="text-center text-xs text-white/90">
+                                                    {formatTimeIST(attendanceRow.inTime)} → {formatTimeIST(attendanceRow.outTime)}
+                                                </Text>
+                                            </View>
+                                        ) : (
+                                            <View className="mt-3 rounded-2xl border border-white/10 bg-black/10 p-3">
+                                                <Text className="text-center text-xs text-white/80">
+                                                    No check-in yet — waiting for attendance log
+                                                </Text>
+                                            </View>
+                                        )}
+                                    </>
+                                )}
+                            </LinearGradient>
+                        </MotiView>
+                    )}
+
+                    {/* Role blocks — mirror web dashboard/stats */}
+                    {userRole === 'hr' || userRole === 'super_admin' || userRole === 'sub_admin' ? (
+                        <View className="mb-6 flex-row flex-wrap justify-between">
+                            <DashboardMetricCard
+                                title="Total workforce"
+                                value={stats.totalEmployees ?? 0}
+                                description="Active employees (scope)"
+                                icon={Users}
+                                iconColor="#059669"
+                                iconBg="#ECFDF5"
+                            />
+                            <DashboardMetricCard
+                                title="Pending approvals"
+                                value={stats.pendingLeaves ?? 0}
+                                description="Requires your action"
+                                icon={Clock}
+                                iconColor="#D97706"
+                                iconBg="#FFFBEB"
+                            />
+                            <DashboardMetricCard
+                                title="Approved leaves"
+                                value={stats.approvedLeaves ?? 0}
+                                description="Finalized records"
+                                icon={CheckCircle2}
+                                iconColor="#059669"
+                                iconBg="#ECFDF5"
+                            />
+                            <DashboardMetricCard
+                                title="Active today"
+                                value={stats.todayPresent ?? 0}
+                                description="Present count"
+                                icon={Calendar}
+                                iconColor="#059669"
+                                iconBg="#D1FAE5"
+                            />
                         </View>
-                        <Text className="text-3xl font-black text-neutral-900 tracking-tighter">8 Requests</Text>
-                        <Text className="text-neutral-400 font-medium text-sm mt-1">Pending leaves and permission approvals</Text>
-                    </MotiView>
+                    ) : userRole === 'hod' || userRole === 'manager' ? (
+                        <View className="mb-6 flex-row flex-wrap justify-between">
+                            <DashboardMetricCard
+                                title="Team strength"
+                                value={stats.totalEmployees ?? 0}
+                                description="Total members"
+                                icon={Users}
+                                iconColor="#059669"
+                                iconBg="#ECFDF5"
+                            />
+                            <DashboardMetricCard
+                                title="Team present"
+                                value={stats.todayPresent ?? 0}
+                                description="Today"
+                                icon={Calendar}
+                                iconColor="#047857"
+                                iconBg="#D1FAE5"
+                            />
+                            <DashboardMetricCard
+                                title="Pending team"
+                                value={stats.teamPendingApprovals ?? 0}
+                                description="Awaiting decision"
+                                icon={Clock}
+                                iconColor="#D97706"
+                                iconBg="#FFFBEB"
+                            />
+                            <DashboardMetricCard
+                                title="Efficiency"
+                                value={`${stats.efficiencyScore ?? 0}%`}
+                                description="Department avg"
+                                icon={CheckCircle2}
+                                iconColor="#059669"
+                                iconBg="#ECFDF5"
+                            />
+                        </View>
+                    ) : (
+                        <View className="mb-6 flex-row flex-wrap justify-between">
+                            <DashboardMetricCard
+                                title="Leave balance"
+                                value={stats.leaveBalance ?? 0}
+                                description="Available days"
+                                icon={Calendar}
+                                iconColor="#059669"
+                                iconBg="#ECFDF5"
+                            />
+                            <DashboardMetricCard
+                                title="Comp. off (CCL)"
+                                value={employeeCco != null ? employeeCco : '—'}
+                                description={ccoDescription}
+                                icon={Coffee}
+                                iconColor="#B45309"
+                                iconBg="#FFFBEB"
+                            />
+                            <DashboardMetricCard
+                                title="Active requests"
+                                value={stats.myPendingLeaves ?? 0}
+                                description="Awaiting approval"
+                                icon={Clock}
+                                iconColor="#D97706"
+                                iconBg="#FFFBEB"
+                            />
+                            <DashboardMetricCard
+                                title="Monthly presence"
+                                value={stats.todayPresent ?? 0}
+                                description="Present days (period)"
+                                icon={CheckCircle2}
+                                iconColor="#059669"
+                                iconBg="#ECFDF5"
+                            />
+                            <DashboardMetricCard
+                                title="Next holiday(s)"
+                                value={stats.upcomingHolidays ?? 0}
+                                description="Upcoming in view"
+                                icon={Star}
+                                iconColor="#CA8A04"
+                                iconBg="#FEF9C3"
+                            />
+                        </View>
+                    )}
+
+                    <View className="mb-3 flex-row items-center gap-2">
+                        <LayoutDashboard size={20} color="#059669" strokeWidth={2.5} />
+                        <Text className="text-base font-black text-neutral-900">My portal</Text>
+                    </View>
+                    <View className="mb-24 rounded-3xl border border-neutral-100 bg-white/80 p-4">
+                        <QuickLinkRow
+                            label="Apply absence"
+                            desc="Leave or OD request"
+                            icon={Calendar}
+                            color="#059669"
+                            bg="#ECFDF5"
+                            onPress={() => router.push('/(tabs)/leaves')}
+                        />
+                        <QuickLinkRow
+                            label="Time card"
+                            desc="Review daily logs (same as web)"
+                            icon={Clock}
+                            color="#047857"
+                            bg="#D1FAE5"
+                            onPress={() => router.push('/(tabs)/attendance')}
+                        />
+                        {(userRole === 'hr' || userRole === 'super_admin' || userRole === 'sub_admin') && (
+                            <QuickLinkRow
+                                label="Workspace focus"
+                                desc="HRMS web for full directory & payroll"
+                                icon={Building2}
+                                color="#0D9488"
+                                bg="#CCFBF1"
+                                onPress={() => router.push('/(tabs)/profile')}
+                            />
+                        )}
+                        <QuickLinkRow
+                            label="Profile & security"
+                            desc="Account, org hierarchy, password"
+                            icon={User}
+                            color="#0D9488"
+                            bg="#CCFBF1"
+                            onPress={() => router.push('/(tabs)/profile')}
+                        />
+                    </View>
                 </ScrollView>
             </SafeAreaView>
         </View>

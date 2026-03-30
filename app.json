@@ -31,6 +31,15 @@
       "eas": {
         "projectId": "22373c2c-f18d-4fb6-bb6e-e7a140166995"
       }
-    }
+    },
+    "plugins": [
+      "@react-native-community/datetimepicker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow $(PRODUCT_NAME) to attach photo evidence for on-duty requests."
+        }
+      ]
+    ]
   }
 }

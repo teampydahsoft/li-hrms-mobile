@@ -1,8 +1,38 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { LayoutDashboard, Clock, Calendar, User } from 'lucide-react-native';
 import { View, Platform } from 'react-native';
+import { useEffect, useState } from 'react';
+import { useAuthStore } from '../../src/store/useAuthStore';
 
 export default function TabLayout() {
+    const router = useRouter();
+    const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+    const [hydrated, setHydrated] = useState(() => useAuthStore.persist.hasHydrated());
+
+    useEffect(() => {
+        const unsub = useAuthStore.persist.onFinishHydration(() => setHydrated(true));
+        return unsub;
+    }, []);
+
+    useEffect(() => {
+        if (!hydrated || isAuthenticated) return;
+        const t = setTimeout(() => {
+            try {
+                router.replace('/');
+            } catch {
+                /* noop */
+            }
+        }, 0);
+        return () => clearTimeout(t);
+    }, [hydrated, isAuthenticated, router]);
+
+    if (!hydrated) {
+        return <View className="flex-1 bg-white" />;
+    }
+    if (!isAuthenticated) {
+        return <View className="flex-1 bg-white" />;
+    }
+
     return (
         <Tabs
             screenOptions={{
