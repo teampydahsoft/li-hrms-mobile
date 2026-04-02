@@ -25,7 +25,7 @@ apiClient.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response?.status === 401) {
-            useAuthStore.getState().logout();
+            void useAuthStore.getState().logout();
             redirectToLogin();
         }
         return Promise.reject(error);
@@ -55,6 +55,21 @@ export const api = {
     updateProfile: (data: Record<string, unknown>) => apiClient.put<ApiEnvelope>('/users/profile', data),
 
     getEmployee: (empNo: string) => apiClient.get<ApiEnvelope>(`/employees/${empNo}`),
+    getEmployees: (params?: { is_active?: boolean; page?: number; limit?: number; search?: string }) => {
+        const q = new URLSearchParams();
+        if (params?.is_active != null) q.set('is_active', String(params.is_active));
+        if (params?.page != null) q.set('page', String(params.page));
+        if (params?.limit != null) q.set('limit', String(params.limit));
+        if (params?.search) q.set('search', params.search);
+        const qs = q.toString();
+        return apiClient.get<ApiEnvelope>(`/employees${qs ? `?${qs}` : ''}`);
+    },
+    getResolvedDepartmentSettings: (deptId: string, type?: 'leaves' | 'loans' | 'salary_advance' | 'permissions' | 'ot' | 'overtime' | 'all', divisionId?: string) => {
+        const q = new URLSearchParams();
+        if (type) q.set('type', type);
+        if (divisionId) q.set('divisionId', divisionId);
+        return apiClient.get<ApiEnvelope>(`/departments/${deptId}/settings/resolved${q.toString() ? `?${q.toString()}` : ''}`);
+    },
 
     getAttendanceCalendar: (employeeNumber: string, year?: number, month?: number) => {
         const params = new URLSearchParams();
@@ -166,6 +181,40 @@ export const api = {
         q.set('date', date);
         return apiClient.get<ApiEnvelope>(`/leaves/od/check-holiday?${q.toString()}`);
     },
+
+    getMyLoans: (filters?: { status?: string; requestType?: 'loan' | 'salary_advance' }) => {
+        const q = new URLSearchParams();
+        if (filters?.status) q.set('status', filters.status);
+        if (filters?.requestType) q.set('requestType', filters.requestType);
+        const qs = q.toString();
+        return apiClient.get<ApiEnvelope>(`/loans/my${qs ? `?${qs}` : ''}`);
+    },
+
+    getLoan: (id: string) => apiClient.get<ApiEnvelope>(`/loans/${id}`),
+
+    applyLoan: (body: Record<string, unknown>) => apiClient.post<ApiEnvelope>('/loans', body),
+
+    cancelLoan: (id: string, reason?: string) =>
+        apiClient.put<ApiEnvelope>(`/loans/${id}/cancel`, { reason }),
+
+    getLoanEligibility: (empNo?: string) => {
+        const q = new URLSearchParams();
+        if (empNo) q.set('empNo', empNo);
+        return apiClient.get<ApiEnvelope>(`/loans/calculate-eligibility${q.toString() ? `?${q.toString()}` : ''}`, okThrough4xx);
+    },
+    getLoanSettings: (type: 'loan' | 'salary_advance') =>
+        apiClient.get<ApiEnvelope>(`/loans/settings/${type}`),
+
+    getGuarantorCandidates: (search?: string, limit = 60) => {
+        const q = new URLSearchParams();
+        if (search) q.set('search', search);
+        q.set('limit', String(limit));
+        return apiClient.get<ApiEnvelope>(`/loans/guarantor-candidates?${q.toString()}`);
+    },
+    getGuarantorRequests: () => apiClient.get<ApiEnvelope>('/loans/guarantor-requests'),
+    processGuarantorAction: (loanId: string, action: 'accepted' | 'rejected', remarks?: string) =>
+        apiClient.put<ApiEnvelope>(`/loans/${loanId}/guarantor-action`, { action, remarks }),
+    getLoanTransactions: (id: string) => apiClient.get<ApiEnvelope>(`/loans/${id}/transactions`),
 
     /**
      * Upload OD evidence (React Native FormData file part).

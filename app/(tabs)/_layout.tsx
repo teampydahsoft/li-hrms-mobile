@@ -1,5 +1,5 @@
 import { Tabs, useRouter } from 'expo-router';
-import { LayoutDashboard, Clock, Calendar, User } from 'lucide-react-native';
+import { LayoutDashboard, Clock, Calendar, User, Banknote } from 'lucide-react-native';
 import { View, Platform } from 'react-native';
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../../src/store/useAuthStore';
@@ -93,6 +93,15 @@ export default function TabLayout() {
                     title: 'Leaves',
                     tabBarIcon: ({ color, size }) => (
                         <Calendar size={size} color={color} />
+                    ),
+                }}
+            />
+            <Tabs.Screen
+                name="loans"
+                options={{
+                    title: 'Finance',
+                    tabBarIcon: ({ color, size }) => (
+                        <Banknote size={size} color={color} />
                     ),
                 }}
             />

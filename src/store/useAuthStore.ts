@@ -45,7 +45,7 @@ interface AuthState {
     isAuthenticated: boolean;
     setAuth: (user: User, token: string) => void;
     setEmployee: (employee: Employee | null) => void;
-    logout: () => void;
+    logout: () => Promise<void>;
     updateUser: (user: Partial<User>) => void;
 }
 
@@ -58,7 +58,15 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: false,
             setAuth: (user, token) => set({ user, token, isAuthenticated: true }),
             setEmployee: (employee) => set({ employee }),
-            logout: () => set({ user: null, employee: null, token: null, isAuthenticated: false }),
+            logout: async () => {
+                set({ user: null, employee: null, token: null, isAuthenticated: false });
+                try {
+                    // Ensure persisted auth is also removed immediately for reliable sign-out.
+                    await AsyncStorage.removeItem('auth-storage');
+                } catch {
+                    // Non-blocking: in-memory logout state already updated.
+                }
+            },
             updateUser: (updatedUser) =>
                 set((state) => ({
                     user: state.user ? { ...state.user, ...updatedUser } : null

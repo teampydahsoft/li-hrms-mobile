@@ -28,7 +28,7 @@ type ProfileDataContextValue = {
 const ProfileDataContext = createContext<ProfileDataContextValue | null>(null);
 
 export function ProfileDataProvider({ children }: { children: ReactNode }) {
-    const { user, employee, setEmployee, updateUser } = useAuthStore();
+    const { user, employee, token, isAuthenticated, setEmployee, updateUser } = useAuthStore();
     const [loading, setLoading] = useState(true);
     const [orgHierarchy, setOrgHierarchy] = useState<OrgHierarchyState>({ division: null, department: null });
 
@@ -54,6 +54,12 @@ export function ProfileDataProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const fetchProfileData = useCallback(async () => {
+        if (!isAuthenticated || !token) {
+            setLoading(false);
+            setOrgHierarchy({ division: null, department: null });
+            setEmployee(null);
+            return;
+        }
         try {
             const meRes = await api.getMe();
             if (meRes.data.success && meRes.data.data && typeof meRes.data.data === 'object') {
@@ -83,7 +89,7 @@ export function ProfileDataProvider({ children }: { children: ReactNode }) {
                         phone,
                     });
 
-                    const empIdentifier = (u.emp_no || u.employeeId || '').trim();
+                    const empIdentifier = String(u.emp_no ?? u.employeeId ?? '').trim();
                     if (empIdentifier) {
                         const empRes = await api.getEmployee(empIdentifier);
                         if (empRes.data.success && empRes.data.data) {
@@ -102,7 +108,7 @@ export function ProfileDataProvider({ children }: { children: ReactNode }) {
         } finally {
             setLoading(false);
         }
-    }, [updateUser, setEmployee, loadOrgHierarchyForEmployee]);
+    }, [isAuthenticated, token, updateUser, setEmployee, loadOrgHierarchyForEmployee]);
 
     useEffect(() => {
         fetchProfileData();

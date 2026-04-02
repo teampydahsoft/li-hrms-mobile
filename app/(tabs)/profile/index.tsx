@@ -21,8 +21,8 @@ export default function ProfileIndexScreen() {
             {
                 text: 'Log Out',
                 style: 'destructive',
-                onPress: () => {
-                    logout();
+                onPress: async () => {
+                    await logout();
                     redirectToLogin();
                 },
             },

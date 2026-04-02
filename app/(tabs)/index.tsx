@@ -19,6 +19,7 @@ import {
     User,
     ChevronRight,
     Building2,
+    Banknote,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -545,6 +546,14 @@ export default function DashboardScreen() {
                                 onPress={() => router.push('/(tabs)/profile')}
                             />
                         )}
+                        <QuickLinkRow
+                            label="Loans & advances"
+                            desc="Apply and track finance requests"
+                            icon={Banknote}
+                            color="#0F766E"
+                            bg="#CCFBF1"
+                            onPress={() => router.push('/(tabs)/loans')}
+                        />
                         <QuickLinkRow
                             label="Profile & security"
                             desc="Account, org hierarchy, password"

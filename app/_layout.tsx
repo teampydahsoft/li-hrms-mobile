@@ -30,8 +30,10 @@ export default function RootLayout() {
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                 <Stack.Screen name="apply-leave" options={{ animation: 'slide_from_right' }} />
                 <Stack.Screen name="apply-od" options={{ animation: 'slide_from_right' }} />
+                <Stack.Screen name="apply-loan" options={{ animation: 'slide_from_right' }} />
                 <Stack.Screen name="leave/[id]" options={{ animation: 'slide_from_right' }} />
                 <Stack.Screen name="od/[id]" options={{ animation: 'slide_from_right' }} />
+                <Stack.Screen name="loan/[id]" options={{ animation: 'slide_from_right' }} />
             </Stack>
         </SafeAreaProvider>
     );
