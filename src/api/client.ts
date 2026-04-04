@@ -25,8 +25,10 @@ apiClient.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response?.status === 401) {
-            void useAuthStore.getState().logout();
-            redirectToLogin();
+            void (async () => {
+                await useAuthStore.getState().logout();
+                redirectToLogin();
+            })();
         }
         return Promise.reject(error);
     }

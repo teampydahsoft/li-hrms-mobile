@@ -5,7 +5,6 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../../src/store/useAuthStore';
-import { redirectToLogin } from '../../../src/auth/redirectToLogin';
 import { useProfileData } from '../../../src/features/profile/ProfileDataContext';
 import { ProfileHero } from '../../../src/features/profile/ProfileHero';
 import { ProfileContactSection } from '../../../src/features/profile/ProfileContactSection';
@@ -23,7 +22,6 @@ export default function ProfileIndexScreen() {
                 style: 'destructive',
                 onPress: async () => {
                     await logout();
-                    redirectToLogin();
                 },
             },
         ]);

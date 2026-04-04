@@ -1,36 +1,38 @@
-import { Tabs, useRouter } from 'expo-router';
+import { Tabs } from 'expo-router';
 import { LayoutDashboard, Clock, Calendar, User, Banknote } from 'lucide-react-native';
-import { View, Platform } from 'react-native';
-import { useEffect, useState } from 'react';
+import { View, Platform, ActivityIndicator, Text } from 'react-native';
 import { useAuthStore } from '../../src/store/useAuthStore';
+import { useAuthPersistHydrated } from '../../src/hooks/useAuthPersistHydrated';
+
+const fill = { flex: 1 as const, backgroundColor: '#ffffff' as const };
 
 export default function TabLayout() {
-    const router = useRouter();
     const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-    const [hydrated, setHydrated] = useState(() => useAuthStore.persist.hasHydrated());
-
-    useEffect(() => {
-        const unsub = useAuthStore.persist.onFinishHydration(() => setHydrated(true));
-        return unsub;
-    }, []);
-
-    useEffect(() => {
-        if (!hydrated || isAuthenticated) return;
-        const t = setTimeout(() => {
-            try {
-                router.replace('/');
-            } catch {
-                /* noop */
-            }
-        }, 0);
-        return () => clearTimeout(t);
-    }, [hydrated, isAuthenticated, router]);
+    const isLoggingOut = useAuthStore((s) => s.isLoggingOut);
+    const hydrated = useAuthPersistHydrated();
 
     if (!hydrated) {
-        return <View className="flex-1 bg-white" />;
+        return <View style={fill} />;
+    }
+    if (isLoggingOut) {
+        return (
+            <View style={[fill, { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }]}>
+                <ActivityIndicator size="large" color="#10B981" />
+                <Text style={{ marginTop: 16, textAlign: 'center', fontSize: 11, fontWeight: '700', color: '#a3a3a3', letterSpacing: 1 }}>
+                    Signing out…
+                </Text>
+            </View>
+        );
     }
     if (!isAuthenticated) {
-        return <View className="flex-1 bg-white" />;
+        return (
+            <View style={[fill, { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }]}>
+                <ActivityIndicator size="large" color="#10B981" />
+                <Text style={{ marginTop: 16, textAlign: 'center', fontSize: 11, fontWeight: '700', color: '#a3a3a3', letterSpacing: 1 }}>
+                    Returning to home…
+                </Text>
+            </View>
+        );
     }
 
     return (

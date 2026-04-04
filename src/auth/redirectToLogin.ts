@@ -1,14 +1,20 @@
 import { router } from 'expo-router';
 
-/** Imperative navigation to login (logout, 401, session expired). Runs after a microtask so Zustand + layouts settle first. */
+/** Reset root stack to public home (401 / session expired). User can open Sign in from there. */
 export function redirectToLogin(): void {
+    const go = () => {
+        try {
+            router.replace('/');
+        } catch {
+            /* Router not ready */
+        }
+    };
+    try {
+        go();
+    } catch {
+        /* noop */
+    }
     queueMicrotask(() => {
-        setTimeout(() => {
-            try {
-                router.replace('/');
-            } catch {
-                /* Router not ready */
-            }
-        }, 0);
+        setTimeout(go, 0);
     });
 }

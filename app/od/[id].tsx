@@ -7,17 +7,65 @@ import {
     ActivityIndicator,
     Alert,
     Image,
+    Linking,
+    Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ChevronLeft, Calendar, Clock, MapPin } from 'lucide-react-native';
+import { ChevronLeft, Calendar, Clock, MapPin, ExternalLink } from 'lucide-react-native';
 import { api, ApiEnvelope } from '../../src/api/client';
 import { ApprovalTimeline, type TimelineStep } from '../../src/components/ApprovalTimeline';
 import { formatDateRangeIST, formatDateTimeIST } from '../../src/utils/dateIST';
 
 type ChainStep = TimelineStep;
+
+function googleMapsUrl(lat: number, lng: number): string {
+    return `https://www.google.com/maps?q=${lat},${lng}`;
+}
+
+function openMaps(lat: number, lng: number) {
+    const url = googleMapsUrl(lat, lng);
+    Linking.openURL(url).catch(() => {
+        Alert.alert('Maps', 'Could not open maps.');
+    });
+}
+
+function parseGeo(
+    row: Record<string, unknown> | null
+): { latitude: number; longitude: number; address?: string; capturedAt?: string; source: 'geoLocation' | 'exif' } | null {
+    if (!row) return null;
+    const geo = row.geoLocation as {
+        latitude?: number | string;
+        longitude?: number | string;
+        address?: string;
+        capturedAt?: string;
+    } | undefined;
+    if (geo != null) {
+        const lat = Number(geo.latitude);
+        const lng = Number(geo.longitude);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            return {
+                latitude: lat,
+                longitude: lng,
+                address: geo.address,
+                capturedAt: geo.capturedAt != null ? String(geo.capturedAt) : undefined,
+                source: 'geoLocation',
+            };
+        }
+    }
+    const photo = row.photoEvidence as { exifLocation?: { latitude?: number | string; longitude?: number | string } } | undefined;
+    const exif = photo?.exifLocation;
+    if (exif != null) {
+        const lat = Number(exif.latitude);
+        const lng = Number(exif.longitude);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            return { latitude: lat, longitude: lng, source: 'exif' };
+        }
+    }
+    return null;
+}
 
 function statusBadge(status: string): { wrap: string; text: string } {
     const s = (status || '').toLowerCase();
@@ -58,8 +106,9 @@ export default function ODDetailScreen() {
     const chain = ((row?.workflow as { approvalChain?: ChainStep[] } | undefined)?.approvalChain ||
         []) as ChainStep[];
 
-    const photo = row?.photoEvidence as { url?: string } | undefined;
+    const photo = row?.photoEvidence as { url?: string; exifLocation?: { latitude?: number; longitude?: number } } | undefined;
     const photoUrl = photo?.url;
+    const geoParsed = parseGeo(row);
 
     const onCancel = () => {
         Alert.alert('Withdraw application', 'Cancel this on-duty request?', [
@@ -154,12 +203,79 @@ export default function ODDetailScreen() {
                             ) : null}
                         </View>
 
-                        {photoUrl ? (
-                            <View className="mb-4 rounded-[28px] overflow-hidden border-2 border-neutral-100">
-                                <Text className="text-neutral-400 text-[10px] font-black uppercase tracking-widest p-4 pb-2">
-                                    Photo evidence
+                        {(photoUrl || geoParsed) ? (
+                            <View className="mb-4 rounded-[28px] border-2 border-neutral-100 bg-neutral-50/80 p-4">
+                                <Text className="mb-3 text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                                    Evidence & location
                                 </Text>
-                                <Image source={{ uri: photoUrl }} className="w-full h-64 bg-neutral-100" resizeMode="cover" />
+                                {photoUrl ? (
+                                    <View className="mb-4 overflow-hidden rounded-2xl border border-neutral-100 bg-white">
+                                        <Text className="px-4 pt-3 pb-2 text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                                            Photo evidence
+                                        </Text>
+                                        <Image
+                                            source={{ uri: photoUrl }}
+                                            style={{ width: '100%', height: 220 }}
+                                            resizeMode="cover"
+                                        />
+                                    </View>
+                                ) : null}
+                                {geoParsed ? (
+                                    <View className="rounded-2xl border border-neutral-100 bg-white p-4">
+                                        <View className="mb-2 flex-row items-center gap-2">
+                                            <MapPin size={18} color="#ef4444" strokeWidth={2.5} />
+                                            <Text className="text-xs font-black uppercase tracking-widest text-neutral-700">
+                                                {geoParsed.source === 'exif' ? 'Location (from photo EXIF)' : 'Live location'}
+                                            </Text>
+                                        </View>
+                                        <View className="flex-row flex-wrap gap-x-4 gap-y-1">
+                                            <Text className="text-xs text-neutral-600">
+                                                <Text className="font-bold text-neutral-400">Lat: </Text>
+                                                <Text className="font-mono">{geoParsed.latitude.toFixed(6)}</Text>
+                                            </Text>
+                                            <Text className="text-xs text-neutral-600">
+                                                <Text className="font-bold text-neutral-400">Lon: </Text>
+                                                <Text className="font-mono">{geoParsed.longitude.toFixed(6)}</Text>
+                                            </Text>
+                                        </View>
+                                        {geoParsed.address ? (
+                                            <View className="mt-3 border-t border-neutral-100 pt-3">
+                                                <Text className="text-[10px] font-bold uppercase text-neutral-400">Address</Text>
+                                                <Text className="mt-1 text-xs font-medium leading-5 text-neutral-700">{geoParsed.address}</Text>
+                                            </View>
+                                        ) : null}
+                                        {geoParsed.capturedAt ? (
+                                            <Text className="mt-2 text-[10px] text-neutral-500">
+                                                Captured (IST): {formatDateTimeIST(geoParsed.capturedAt)}
+                                            </Text>
+                                        ) : null}
+                                        <TouchableOpacity
+                                            onPress={() => openMaps(geoParsed.latitude, geoParsed.longitude)}
+                                            className="mt-3 flex-row items-center justify-center rounded-xl bg-blue-50 py-3"
+                                        >
+                                            <ExternalLink size={16} color="#2563eb" strokeWidth={2.5} />
+                                            <Text className="ml-2 text-[10px] font-black uppercase tracking-wider text-blue-600">
+                                                View on Google Maps
+                                            </Text>
+                                        </TouchableOpacity>
+                                        {Platform.OS === 'ios' ? (
+                                            <TouchableOpacity
+                                                onPress={() => {
+                                                    Linking.openURL(
+                                                        `http://maps.apple.com/?ll=${geoParsed.latitude},${geoParsed.longitude}&q=Location`
+                                                    ).catch(() => Alert.alert('Maps', 'Could not open Apple Maps.'));
+                                                }}
+                                                className="mt-2 flex-row items-center justify-center rounded-xl border border-neutral-200 py-2.5"
+                                            >
+                                                <Text className="text-[10px] font-black uppercase tracking-wider text-neutral-700">
+                                                    Open in Apple Maps
+                                                </Text>
+                                            </TouchableOpacity>
+                                        ) : null}
+                                    </View>
+                                ) : photoUrl ? (
+                                    <Text className="text-xs text-neutral-500">No GPS coordinates stored for this request.</Text>
+                                ) : null}
                             </View>
                         ) : null}
 

@@ -37,7 +37,14 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow $(PRODUCT_NAME) to attach photo evidence for on-duty requests."
+          "photosPermission": "Allow $(PRODUCT_NAME) to attach photo evidence for on-duty requests.",
+          "cameraPermission": "Allow $(PRODUCT_NAME) to take a photo for on-duty evidence."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow $(PRODUCT_NAME) to record your location with on-duty requests, matching the workspace."
         }
       ]
     ]

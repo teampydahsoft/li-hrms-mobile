@@ -15,8 +15,9 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ChevronLeft, Camera } from 'lucide-react-native';
+import { ChevronLeft, Camera, Image as ImageIcon, MapPin } from 'lucide-react-native';
 import { api, ApiEnvelope } from '../src/api/client';
 import { useAuthStore } from '../src/store/useAuthStore';
 import { DateField, formatYmd } from '../src/components/DateField';
@@ -47,15 +48,93 @@ export default function ApplyODScreen() {
     const [halfDayType, setHalfDayType] = useState<'first_half' | 'second_half'>('first_half');
 
     const [evidence, setEvidence] = useState<ImagePicker.ImagePickerAsset | null>(null);
+    const [locationData, setLocationData] = useState<{
+        latitude: number;
+        longitude: number;
+        address?: string;
+        capturedAt: string;
+    } | null>(null);
+    const [locating, setLocating] = useState(false);
 
-    useEffect(() => {
-        (async () => {
-            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const requestPhotoPermission = async () => {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Photos', 'Photo library access is required to attach OD evidence (same as workspace).');
+            return false;
+        }
+        return true;
+    };
+
+    const requestCameraPermission = async () => {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Camera', 'Camera access is required to capture OD evidence.');
+            return false;
+        }
+        return true;
+    };
+
+    const pickFromLibrary = async () => {
+        const ok = await requestPhotoPermission();
+        if (!ok) return;
+        const res = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: false,
+            quality: 0.85,
+        });
+        if (!res.canceled && res.assets[0]) setEvidence(res.assets[0]);
+    };
+
+    const pickFromCamera = async () => {
+        const ok = await requestCameraPermission();
+        if (!ok) return;
+        const res = await ImagePicker.launchCameraAsync({
+            allowsEditing: false,
+            quality: 0.85,
+        });
+        if (!res.canceled && res.assets[0]) setEvidence(res.assets[0]);
+    };
+
+    const captureCurrentLocation = async () => {
+        setLocating(true);
+        try {
+            const { status } = await Location.requestForegroundPermissionsAsync();
             if (status !== 'granted') {
-                Alert.alert('Photos', 'Photo access is required for OD evidence.');
+                Alert.alert(
+                    'Location',
+                    'Location permission is required for on-duty applications, matching the workspace (evidence + place verification).'
+                );
+                return;
             }
-        })();
-    }, []);
+            const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+            const { latitude, longitude } = pos.coords;
+            let address = '';
+            try {
+                const rev = await Location.reverseGeocodeAsync({ latitude, longitude });
+                const r = rev[0];
+                if (r) {
+                    address = [r.name, r.street, r.district, r.city, r.region, r.postalCode]
+                        .filter(Boolean)
+                        .join(', ');
+                }
+            } catch {
+                /* optional */
+            }
+            setLocationData({
+                latitude,
+                longitude,
+                address: address || undefined,
+                capturedAt: new Date().toISOString(),
+            });
+            if (address && !placeVisited.trim()) {
+                setPlaceVisited(address);
+            }
+        } catch (e) {
+            Alert.alert('Location', e instanceof Error ? e.message : 'Could not read your location.');
+        } finally {
+            setLocating(false);
+        }
+    };
 
     useEffect(() => {
         const init = async () => {
@@ -112,15 +191,6 @@ export default function ApplyODScreen() {
         if (phone) setContactNumber(phone);
     }, [employee, user]);
 
-    const pickImage = async () => {
-        const res = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images'],
-            allowsEditing: true,
-            quality: 0.85,
-        });
-        if (!res.canceled && res.assets[0]) setEvidence(res.assets[0]);
-    };
-
     const selectedTypeLabel = types.find((t) => t.code === odType)?.name || odType || 'Select type';
 
     const onSubmit = async () => {
@@ -134,6 +204,10 @@ export default function ApplyODScreen() {
         }
         if (!evidence?.uri) {
             Alert.alert('Photo', 'Attach photo evidence (required for OD).');
+            return;
+        }
+        if (!locationData) {
+            Alert.alert('Location', 'Capture your current location before submitting (required, same as workspace).');
             return;
         }
 
@@ -167,6 +241,12 @@ export default function ApplyODScreen() {
                 odType,
                 odType_extended: odTypeExtended,
                 photoEvidence: { url: photoUrl, key: photoKey },
+                geoLocation: {
+                    latitude: locationData.latitude,
+                    longitude: locationData.longitude,
+                    capturedAt: locationData.capturedAt,
+                    address: locationData.address || '',
+                },
             };
             if (odTypeExtended === 'hours') {
                 payload.odStartTime = odStartTime;
@@ -306,10 +386,33 @@ export default function ApplyODScreen() {
                         <TextInput
                             value={placeVisited}
                             onChangeText={setPlaceVisited}
-                            placeholder="Location / client"
-                            className="bg-white rounded-2xl border-2 border-neutral-100 px-4 py-3 text-neutral-900 font-medium mb-4"
+                            placeholder="Location / client (or use capture location below)"
+                            className="bg-white rounded-2xl border-2 border-neutral-100 px-4 py-3 text-neutral-900 font-medium mb-3"
                             placeholderTextColor="#94A3B8"
                         />
+                        <TouchableOpacity
+                            onPress={captureCurrentLocation}
+                            disabled={locating}
+                            className="mb-4 flex-row items-center justify-center rounded-2xl border-2 border-emerald-200 bg-emerald-50 px-4 py-3"
+                        >
+                            <MapPin size={20} color="#059669" strokeWidth={2.5} />
+                            <Text className="ml-2 font-black text-emerald-800">
+                                {locating ? 'Getting location…' : 'Capture current location'}
+                            </Text>
+                        </TouchableOpacity>
+                        {locationData ? (
+                            <View className="mb-4 rounded-2xl border border-emerald-100 bg-white px-4 py-3">
+                                <Text className="text-[10px] font-black uppercase text-emerald-700">GPS captured</Text>
+                                <Text className="mt-1 text-xs text-neutral-600">
+                                    {locationData.latitude.toFixed(5)}, {locationData.longitude.toFixed(5)}
+                                </Text>
+                                {locationData.address ? (
+                                    <Text className="mt-1 text-xs text-neutral-500">{locationData.address}</Text>
+                                ) : null}
+                            </View>
+                        ) : (
+                            <Text className="mb-4 text-xs font-medium text-amber-800">Location is required before submit (workspace rule).</Text>
+                        )}
 
                         <Text className="text-neutral-500 text-[10px] font-black uppercase tracking-widest mb-2">Purpose *</Text>
                         <TextInput
@@ -323,19 +426,36 @@ export default function ApplyODScreen() {
                         />
 
                         <Text className="text-neutral-500 text-[10px] font-black uppercase tracking-widest mb-2">Photo evidence *</Text>
-                        <TouchableOpacity
-                            onPress={pickImage}
-                            className="bg-white rounded-2xl border-2 border-dashed border-neutral-200 px-4 py-6 mb-4 items-center"
-                        >
+                        <View className="mb-4 flex-row gap-3">
+                            <TouchableOpacity
+                                onPress={pickFromLibrary}
+                                className="flex-1 flex-row items-center justify-center rounded-2xl border-2 border-neutral-200 bg-white py-3"
+                            >
+                                <ImageIcon size={18} color="#0F172A" strokeWidth={2.5} />
+                                <Text className="ml-2 text-xs font-black text-neutral-800">Gallery</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={pickFromCamera}
+                                className="flex-1 flex-row items-center justify-center rounded-2xl border-2 border-neutral-200 bg-white py-3"
+                            >
+                                <Camera size={18} color="#0F172A" strokeWidth={2.5} />
+                                <Text className="ml-2 text-xs font-black text-neutral-800">Camera</Text>
+                            </TouchableOpacity>
+                        </View>
+                        <View className="mb-4 overflow-hidden rounded-2xl border-2 border-dashed border-neutral-200 bg-neutral-50">
                             {evidence?.uri ? (
-                                <Image source={{ uri: evidence.uri }} className="w-full h-48 rounded-xl" resizeMode="cover" />
+                                <Image
+                                    source={{ uri: evidence.uri }}
+                                    style={{ width: '100%', height: 220 }}
+                                    resizeMode="cover"
+                                />
                             ) : (
-                                <>
+                                <View className="items-center px-4 py-10">
                                     <Camera size={32} color="#10B981" />
-                                    <Text className="text-neutral-600 font-bold mt-2">Tap to choose photo</Text>
-                                </>
+                                    <Text className="mt-2 text-center text-sm font-bold text-neutral-500">Choose a photo to see preview</Text>
+                                </View>
                             )}
-                        </TouchableOpacity>
+                        </View>
 
                         <Text className="text-neutral-500 text-[10px] font-black uppercase tracking-widest mb-2">Contact number</Text>
                         <TextInput

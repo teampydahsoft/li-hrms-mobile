@@ -43,6 +43,8 @@ interface AuthState {
     employee: Employee | null;
     token: string | null;
     isAuthenticated: boolean;
+    /** True while sign-out is clearing storage; keeps tabs from redirecting until finished. Not persisted. */
+    isLoggingOut: boolean;
     setAuth: (user: User, token: string) => void;
     setEmployee: (employee: Employee | null) => void;
     logout: () => Promise<void>;
@@ -56,16 +58,24 @@ export const useAuthStore = create<AuthState>()(
             employee: null,
             token: null,
             isAuthenticated: false,
+            isLoggingOut: false,
             setAuth: (user, token) => set({ user, token, isAuthenticated: true }),
             setEmployee: (employee) => set({ employee }),
             logout: async () => {
-                set({ user: null, employee: null, token: null, isAuthenticated: false });
+                set({
+                    isLoggingOut: true,
+                    user: null,
+                    employee: null,
+                    token: null,
+                    isAuthenticated: false,
+                });
                 try {
-                    // Ensure persisted auth is also removed immediately for reliable sign-out.
                     await AsyncStorage.removeItem('auth-storage');
                 } catch {
-                    // Non-blocking: in-memory logout state already updated.
+                    /* in-memory state already cleared */
                 }
+                await new Promise((r) => setTimeout(r, 1000));
+                set({ isLoggingOut: false });
             },
             updateUser: (updatedUser) =>
                 set((state) => ({
@@ -75,6 +85,12 @@ export const useAuthStore = create<AuthState>()(
         {
             name: 'auth-storage',
             storage: createJSONStorage(() => AsyncStorage),
+            partialize: (state) => ({
+                user: state.user,
+                employee: state.employee,
+                token: state.token,
+                isAuthenticated: state.isAuthenticated,
+            }),
         }
     )
 );
