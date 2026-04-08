@@ -1,14 +1,16 @@
 import { Tabs } from 'expo-router';
-import { LayoutDashboard, Clock, Calendar, User, Banknote } from 'lucide-react-native';
+import { LayoutDashboard, Clock, Calendar, User, Banknote, Users, Activity } from 'lucide-react-native';
 import { View, Platform, ActivityIndicator, Text } from 'react-native';
 import { useAuthStore } from '../../src/store/useAuthStore';
 import { useAuthPersistHydrated } from '../../src/hooks/useAuthPersistHydrated';
+import { canViewEmployeesModule, canViewLeavesModule, canViewLoansModule } from '../../src/lib/permissions';
 
 const fill = { flex: 1 as const, backgroundColor: '#ffffff' as const };
 
 export default function TabLayout() {
     const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
     const isLoggingOut = useAuthStore((s) => s.isLoggingOut);
+    const user = useAuthStore((s) => s.user);
     const hydrated = useAuthPersistHydrated();
 
     if (!hydrated) {
@@ -24,16 +26,12 @@ export default function TabLayout() {
             </View>
         );
     }
-    if (!isAuthenticated) {
-        return (
-            <View style={[fill, { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }]}>
-                <ActivityIndicator size="large" color="#10B981" />
-                <Text style={{ marginTop: 16, textAlign: 'center', fontSize: 11, fontWeight: '700', color: '#a3a3a3', letterSpacing: 1 }}>
-                    Returning to home…
-                </Text>
-            </View>
-        );
-    }
+
+    const tabBarShown = isAuthenticated;
+    const showLeaves = canViewLeavesModule(user);
+    const showLoans = canViewLoansModule(user);
+    const showEmployees = canViewEmployeesModule(user);
+    const isSuperAdmin = user?.role === 'super_admin';
 
     return (
         <Tabs
@@ -48,26 +46,28 @@ export default function TabLayout() {
                     letterSpacing: 1,
                     marginBottom: -5
                 },
-                tabBarStyle: {
-                    backgroundColor: '#FFFFFF',
-                    borderTopWidth: 0,
-                    elevation: 10,
-                    height: 100,
-                    paddingBottom: 35,
-                    paddingTop: 15,
-                    borderTopLeftRadius: 40,
-                    borderTopRightRadius: 40,
-                    position: 'absolute',
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    shadowColor: '#10B981',
-                    shadowOffset: { width: 0, height: -10 },
-                    shadowOpacity: 0.08,
-                    shadowRadius: 20,
-                    borderWidth: 2,
-                    borderColor: '#F1F5F9'
-                },
+                tabBarStyle: tabBarShown
+                    ? {
+                          backgroundColor: '#FFFFFF',
+                          borderTopWidth: 0,
+                          elevation: 10,
+                          height: 100,
+                          paddingBottom: 35,
+                          paddingTop: 15,
+                          borderTopLeftRadius: 40,
+                          borderTopRightRadius: 40,
+                          position: 'absolute',
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          shadowColor: '#10B981',
+                          shadowOffset: { width: 0, height: -10 },
+                          shadowOpacity: 0.08,
+                          shadowRadius: 20,
+                          borderWidth: 2,
+                          borderColor: '#F1F5F9',
+                      }
+                    : { display: 'none' },
                 headerShown: false,
             }}
         >
@@ -84,8 +84,29 @@ export default function TabLayout() {
                 name="attendance"
                 options={{
                     title: 'Attendance',
+                    href: isSuperAdmin ? null : undefined,
                     tabBarIcon: ({ color, size }) => (
                         <Clock size={size} color={color} />
+                    ),
+                }}
+            />
+            <Tabs.Screen
+                name="live-attendance"
+                options={{
+                    title: 'Live',
+                    href: isSuperAdmin ? undefined : null,
+                    tabBarIcon: ({ color, size }) => (
+                        <Activity size={size} color={color} />
+                    ),
+                }}
+            />
+            <Tabs.Screen
+                name="employees"
+                options={{
+                    title: 'Employees',
+                    href: showEmployees ? undefined : null,
+                    tabBarIcon: ({ color, size }) => (
+                        <Users size={size} color={color} />
                     ),
                 }}
             />
@@ -93,6 +114,7 @@ export default function TabLayout() {
                 name="leaves"
                 options={{
                     title: 'Leaves',
+                    href: showLeaves ? undefined : null,
                     tabBarIcon: ({ color, size }) => (
                         <Calendar size={size} color={color} />
                     ),
@@ -102,6 +124,7 @@ export default function TabLayout() {
                 name="loans"
                 options={{
                     title: 'Finance',
+                    href: showLoans ? undefined : null,
                     tabBarIcon: ({ color, size }) => (
                         <Banknote size={size} color={color} />
                     ),
@@ -114,6 +137,12 @@ export default function TabLayout() {
                     tabBarIcon: ({ color, size }) => (
                         <User size={size} color={color} />
                     ),
+                }}
+            />
+            <Tabs.Screen
+                name="login"
+                options={{
+                    href: null,
                 }}
             />
         </Tabs>

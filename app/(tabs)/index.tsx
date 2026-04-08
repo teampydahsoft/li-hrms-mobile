@@ -3,7 +3,6 @@ import {
     Text,
     ScrollView,
     TouchableOpacity,
-    ActivityIndicator,
     RefreshControl,
 } from 'react-native';
 import { MotiView } from 'moti';
@@ -29,6 +28,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useAuthStore } from '../../src/store/useAuthStore';
 import { api } from '../../src/api/client';
 import { formatTimeIST, todayYmdIST } from '../../src/utils/dateIST';
+import { SkeletonBlock, SkeletonCard } from '../../src/components/Skeleton';
 
 type DashboardStats = {
     totalEmployees?: number;
@@ -269,8 +269,14 @@ export default function DashboardScreen() {
 
     if (loading && !refreshing) {
         return (
-            <View className="flex-1 items-center justify-center bg-white">
-                <ActivityIndicator size="large" color="#059669" />
+            <View className="flex-1 bg-white px-6 pt-8">
+                <SkeletonBlock height={14} width="28%" />
+                <SkeletonBlock height={34} width="56%" style={{ marginTop: 10 }} />
+                <SkeletonBlock height={170} style={{ marginTop: 16 }} radius={24} />
+                <View style={{ marginTop: 14 }}>
+                    <SkeletonCard />
+                    <SkeletonCard />
+                </View>
             </View>
         );
     }

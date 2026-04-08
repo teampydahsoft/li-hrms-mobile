@@ -14,6 +14,11 @@ export interface User {
     division?: { _id: string; name: string };
     isActive?: boolean;
     is_active?: boolean;
+    featureControl?: string[];
+    scope?: 'global' | 'restricted';
+    dataScope?: 'all' | 'department' | 'division' | 'own';
+    departments?: Array<string | { _id?: string; name?: string }>;
+    allowedDivisions?: Array<string | { _id?: string; name?: string }>;
 }
 
 export interface Employee {
@@ -70,11 +75,14 @@ export const useAuthStore = create<AuthState>()(
                     isAuthenticated: false,
                 });
                 try {
-                    await AsyncStorage.removeItem('auth-storage');
+                    useAuthStore.persist.clearStorage();
                 } catch {
-                    /* in-memory state already cleared */
+                    try {
+                        await AsyncStorage.removeItem('auth-storage');
+                    } catch {
+                        /* in-memory state already cleared */
+                    }
                 }
-                await new Promise((r) => setTimeout(r, 1000));
                 set({ isLoggingOut: false });
             },
             updateUser: (updatedUser) =>

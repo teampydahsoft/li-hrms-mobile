@@ -1,0 +1,82 @@
+import type { User } from '../store/useAuthStore';
+
+export type AppRole = 'super_admin' | 'sub_admin' | 'hr' | 'hod' | 'manager' | 'employee';
+
+function normRole(role?: string | null): AppRole | 'unknown' {
+    const r = String(role || '').trim().toLowerCase();
+    if (r === 'super_admin' || r === 'sub_admin' || r === 'hr' || r === 'hod' || r === 'manager' || r === 'employee') {
+        return r;
+    }
+    return 'unknown';
+}
+
+export function isManagementRole(user: User | null | undefined): boolean {
+    const role = normRole(user?.role);
+    return role === 'super_admin' || role === 'sub_admin' || role === 'hr' || role === 'hod' || role === 'manager';
+}
+
+function hasAnyRole(user: User | null | undefined, roles: AppRole[]): boolean {
+    const role = normRole(user?.role);
+    return role !== 'unknown' && roles.includes(role);
+}
+
+function canViewFeature(user: User | null | undefined, featureCode: string): boolean {
+    if (!user) return false;
+    const fc = user.featureControl;
+    if (!fc || fc.length === 0) return true;
+    return fc.includes(featureCode) || fc.includes(`${featureCode}:read`) || fc.includes(`${featureCode}:write`);
+}
+
+function canManageFeature(user: User | null | undefined, featureCode: string): boolean {
+    if (!user) return false;
+    const fc = user.featureControl;
+    if (!fc || fc.length === 0) return true;
+    return fc.includes(featureCode) || fc.includes(`${featureCode}:write`);
+}
+
+export function canViewTeamLeaves(user: User | null | undefined): boolean {
+    return isManagementRole(user) && canViewFeature(user, 'LEAVE_OD');
+}
+
+export function canActionLeaves(user: User | null | undefined): boolean {
+    return hasAnyRole(user, ['super_admin', 'sub_admin', 'hr', 'hod', 'manager']) && canManageFeature(user, 'LEAVE_OD');
+}
+
+export function canViewWorkspaceDashboard(user: User | null | undefined): boolean {
+    return isManagementRole(user);
+}
+
+export function canViewTeamLoans(user: User | null | undefined): boolean {
+    return isManagementRole(user) && canViewFeature(user, 'LOANS');
+}
+
+export function canActionLoans(user: User | null | undefined): boolean {
+    return hasAnyRole(user, ['super_admin', 'sub_admin', 'hr', 'hod', 'manager']) && canManageFeature(user, 'LOANS');
+}
+
+export function canViewLeavesModule(user: User | null | undefined): boolean {
+    return canViewFeature(user, 'LEAVE_OD');
+}
+
+export function canViewLoansModule(user: User | null | undefined): boolean {
+    return canViewFeature(user, 'LOANS');
+}
+
+export function canViewEmployeesModule(user: User | null | undefined): boolean {
+    return isManagementRole(user) && canViewFeature(user, 'EMPLOYEES');
+}
+
+export function canApplyLeaves(user: User | null | undefined): boolean {
+    return canManageFeature(user, 'LEAVE_OD');
+}
+
+export function canApplyLoans(user: User | null | undefined): boolean {
+    return canManageFeature(user, 'LOANS');
+}
+
+export function permissionDebugSummary(user: User | null | undefined): string {
+    const role = String(user?.role || 'unknown');
+    const leaves = `${canViewLeavesModule(user) ? 'R' : '-'}${canApplyLeaves(user) ? 'W' : '-'}`;
+    const loans = `${canViewLoansModule(user) ? 'R' : '-'}${canApplyLoans(user) ? 'W' : '-'}`;
+    return `role:${role} leaves:${leaves} loans:${loans}`;
+}

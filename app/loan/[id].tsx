@@ -4,7 +4,6 @@ import {
     Text,
     ScrollView,
     TouchableOpacity,
-    ActivityIndicator,
     Alert,
     TextInput,
 } from 'react-native';
@@ -17,6 +16,10 @@ import { api, ApiEnvelope } from '../../src/api/client';
 import { formatDateTimeIST } from '../../src/utils/dateIST';
 import { useAuthStore } from '../../src/store/useAuthStore';
 import { ApprovalTimeline, type TimelineStep } from '../../src/components/ApprovalTimeline';
+import { canActionLoans, isManagementRole } from '../../src/lib/permissions';
+import { canCurrentUserActOnLoanItem } from '../../src/utils/workflowPermissions';
+import { SkeletonBlock } from '../../src/components/Skeleton';
+import { EmployeeMetaCard } from '../../src/components/EmployeeMetaCard';
 
 function statusBadge(status: string): { wrap: string; text: string } {
     const s = (status || '').toLowerCase();
@@ -85,12 +88,20 @@ function buildLoanTimeline(row: Record<string, unknown> | null): TimelineStep[] 
     return steps;
 }
 
+function nodeName(v: unknown): string {
+    if (!v) return '—';
+    if (typeof v === 'string') return v;
+    if (typeof v === 'object' && v !== null && 'name' in v) return String((v as { name?: unknown }).name || '—');
+    return '—';
+}
+
 export default function LoanDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const router = useRouter();
     const { user } = useAuthStore();
     const [loading, setLoading] = useState(true);
     const [row, setRow] = useState<Record<string, unknown> | null>(null);
+    const [allowHigherAuthority, setAllowHigherAuthority] = useState(false);
     const [transactions, setTransactions] = useState<Array<Record<string, unknown>>>([]);
     const [remarks, setRemarks] = useState('');
     const [acting, setActing] = useState(false);
@@ -105,6 +116,18 @@ export default function LoanDetailScreen() {
             if (body.success && body.data) setRow(body.data as Record<string, unknown>);
             else Alert.alert('Error', String(body.message || body.error || 'Could not load record'));
             setTransactions(Array.isArray(txBody.data?.transactions) ? txBody.data!.transactions : []);
+            if (body.success && body.data) {
+                try {
+                    const data = body.data as { requestType?: 'loan' | 'salary_advance' };
+                    const type = data.requestType === 'salary_advance' ? 'salary_advance' : 'loan';
+                    const settingsRes = await api.getLoanSettings(type);
+                    const settingsBody = settingsRes.data as ApiEnvelope<Record<string, unknown>>;
+                    const wf = (settingsBody.data as { workflow?: { allowHigherAuthorityToApproveLowerLevels?: boolean } } | undefined)?.workflow;
+                    setAllowHigherAuthority(!!wf?.allowHigherAuthorityToApproveLowerLevels);
+                } catch {
+                    setAllowHigherAuthority(false);
+                }
+            }
         } catch {
             Alert.alert('Error', 'Network error');
         } finally {
@@ -118,6 +141,14 @@ export default function LoanDetailScreen() {
 
     const status = String(row?.status ?? '');
     const canCancel = ['pending', 'hod_approved', 'manager_approved', 'hr_approved'].includes(status);
+    const canApproveReject =
+        canActionLoans(user) &&
+        canCurrentUserActOnLoanItem({
+            item: row as unknown as { status?: string; workflow?: { [k: string]: unknown } },
+            user,
+            allowHigherAuthority,
+        });
+    const showEmployeeMeta = isManagementRole(user);
     const b = statusBadge(status);
     const isLoan = String(row?.requestType ?? '') === 'loan';
     const amount = Number(row?.amount ?? 0);
@@ -132,6 +163,25 @@ export default function LoanDetailScreen() {
     const canRespondAsGuarantor = !!myGuarantor && myGuarantor.status === 'pending' && status !== 'cancelled';
     const history = (row?.workflow as { history?: Array<{ action?: string; step?: string; actionByName?: string; timestamp?: string }> } | undefined)?.history || [];
     const timelineSteps = buildLoanTimeline(row);
+    const emp = row?.employeeId as
+        | {
+              emp_no?: string;
+              employee_name?: string;
+              first_name?: string;
+              last_name?: string;
+              designation?: unknown;
+              designation_id?: unknown;
+              department?: unknown;
+              department_id?: unknown;
+              division?: unknown;
+              division_id?: unknown;
+          }
+        | undefined;
+    const empName = String(emp?.employee_name || [emp?.first_name, emp?.last_name].filter(Boolean).join(' ') || '—');
+    const empNo = String(emp?.emp_no || row?.emp_no || '—');
+    const desig = nodeName(emp?.designation || emp?.designation_id || (row as Record<string, unknown> | null)?.designation);
+    const dep = nodeName(emp?.department || emp?.department_id || (row as Record<string, unknown> | null)?.department);
+    const div = nodeName(emp?.division || emp?.division_id || (row as Record<string, unknown> | null)?.division);
 
     const onCancel = () => {
         Alert.alert('Withdraw request', 'Cancel this request?', [
@@ -187,6 +237,30 @@ export default function LoanDetailScreen() {
         );
     };
 
+    const onDecision = (action: 'approve' | 'reject') => {
+        Alert.alert(
+            action === 'approve' ? 'Approve request' : 'Reject request',
+            `Are you sure you want to ${action} this request?`,
+            [
+                { text: 'No', style: 'cancel' },
+                {
+                    text: action === 'approve' ? 'Approve' : 'Reject',
+                    style: action === 'approve' ? 'default' : 'destructive',
+                    onPress: async () => {
+                        try {
+                            const res = await api.processLoanAction(String(id), action);
+                            const body = res.data as ApiEnvelope;
+                            if (!body.success) throw new Error(body.message || body.error || 'Could not process action');
+                            await load();
+                        } catch (e) {
+                            Alert.alert('Action failed', e instanceof Error ? e.message : 'Could not process action');
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
     return (
         <View className="flex-1 bg-white">
             <StatusBar style="dark" />
@@ -206,8 +280,12 @@ export default function LoanDetailScreen() {
                 </View>
 
                 {loading ? (
-                    <View className="flex-1 items-center justify-center">
-                        <ActivityIndicator size="large" color="#10B981" />
+                    <View className="flex-1 px-6 pt-6">
+                        <SkeletonBlock height={24} width="30%" />
+                        <SkeletonBlock height={48} width="45%" style={{ marginTop: 12 }} />
+                        <SkeletonBlock height={170} style={{ marginTop: 14 }} radius={20} />
+                        <SkeletonBlock height={140} style={{ marginTop: 14 }} radius={20} />
+                        <SkeletonBlock height={130} style={{ marginTop: 14 }} radius={20} />
                     </View>
                 ) : !row ? (
                     <View className="flex-1 items-center justify-center px-8">
@@ -243,6 +321,15 @@ export default function LoanDetailScreen() {
                             <Text className="font-medium leading-6 text-neutral-800">{String(row.reason ?? '—')}</Text>
                             {row.remarks ? <Text className="mt-3 text-sm text-neutral-600">Remarks: {String(row.remarks)}</Text> : null}
                         </View>
+                        {showEmployeeMeta ? (
+                            <EmployeeMetaCard
+                                empNo={empNo}
+                                empName={empName}
+                                designation={desig}
+                                division={div}
+                                department={dep}
+                            />
+                        ) : null}
 
                         {guarantors.length > 0 ? (
                             <View className="mb-4 rounded-[28px] border-2 border-neutral-100 bg-white p-5">
@@ -354,6 +441,22 @@ export default function LoanDetailScreen() {
                         ) : (
                             <View className="h-10" />
                         )}
+                        {canApproveReject ? (
+                            <View className="mb-10 flex-row gap-3">
+                                <TouchableOpacity
+                                    onPress={() => onDecision('approve')}
+                                    className="flex-1 items-center rounded-2xl bg-emerald-600 py-4"
+                                >
+                                    <Text className="text-xs font-black uppercase tracking-widest text-white">Approve</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    onPress={() => onDecision('reject')}
+                                    className="flex-1 items-center rounded-2xl bg-rose-600 py-4"
+                                >
+                                    <Text className="text-xs font-black uppercase tracking-widest text-white">Reject</Text>
+                                </TouchableOpacity>
+                            </View>
+                        ) : null}
                     </ScrollView>
                 )}
             </SafeAreaView>

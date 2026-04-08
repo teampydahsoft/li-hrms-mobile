@@ -2,7 +2,6 @@ import {
     View,
     Text,
     ScrollView,
-    ActivityIndicator,
     RefreshControl,
     useWindowDimensions,
 } from 'react-native';
@@ -22,6 +21,7 @@ import {
     formatDateOnlyIST,
     addCalendarDaysIST,
 } from '../../src/utils/dateIST';
+import { SkeletonBlock, SkeletonCard } from '../../src/components/Skeleton';
 
 const POLL_MS = 35_000;
 
@@ -312,8 +312,13 @@ export default function AttendanceScreen() {
                     </View>
 
                     {loading && !calendarMap[today] && !todayDetail ? (
-                        <View className="items-center py-20">
-                            <ActivityIndicator size="large" color="#10B981" />
+                        <View className="pb-20">
+                            <SkeletonBlock height={24} width="36%" />
+                            <SkeletonBlock height={220} style={{ marginTop: 12 }} radius={24} />
+                            <View style={{ marginTop: 12 }}>
+                                <SkeletonCard />
+                                <SkeletonCard />
+                            </View>
                         </View>
                     ) : (
                         <>

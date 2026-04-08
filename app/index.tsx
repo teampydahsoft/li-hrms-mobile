@@ -1,25 +1,17 @@
 import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { router, useRootNavigationState } from 'expo-router';
+import { router, Redirect } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect } from 'react';
 import { useAuthStore } from '../src/store/useAuthStore';
 import { useAuthPersistHydrated } from '../src/hooks/useAuthPersistHydrated';
 
 const screenFill = { flex: 1 as const, backgroundColor: '#ffffff' as const };
 
 export default function HomeScreen() {
-    const rootNavigationState = useRootNavigationState();
     const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
     const hydrated = useAuthPersistHydrated();
-
-    useEffect(() => {
-        if (!hydrated || !isAuthenticated) return;
-        if (!rootNavigationState?.key) return;
-        router.replace('/(tabs)');
-    }, [hydrated, isAuthenticated, rootNavigationState?.key]);
 
     if (!hydrated) {
         return (
@@ -30,11 +22,7 @@ export default function HomeScreen() {
     }
 
     if (isAuthenticated) {
-        return (
-            <View style={[screenFill, { alignItems: 'center', justifyContent: 'center' }]}>
-                <ActivityIndicator size="large" color="#10B981" />
-            </View>
-        );
+        return <Redirect href="/(tabs)" />;
     }
 
     return (
@@ -52,7 +40,7 @@ export default function HomeScreen() {
                 <Text className="mt-3 text-lg font-medium tracking-wide text-neutral-400">Workplace access in one place</Text>
 
                 <TouchableOpacity
-                    onPress={() => router.push('/login')}
+                    onPress={() => router.push('/(tabs)/login')}
                     activeOpacity={0.9}
                     className="mt-14"
                 >

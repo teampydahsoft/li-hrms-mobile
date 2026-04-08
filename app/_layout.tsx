@@ -5,15 +5,32 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { useAuthStore } from '../src/store/useAuthStore';
+import { useAuthPersistHydrated } from '../src/hooks/useAuthPersistHydrated';
 import '../src/styles/global.css';
 
-/** Keeps unauthenticated users off `(tabs)` and sends them to `/` after logout (store cannot navigate reliably). */
+function isPublicUnauthenticatedRoute(segments: readonly string[]): boolean {
+    const first = segments[0];
+    if (first == null || first === '') return true;
+    if (first === 'login' || first === 'index') return true;
+    if (first === '(tabs)' && segments[1] === 'login') return true;
+    return false;
+}
+
+function navigateToSignIn(): void {
+    try {
+        router.replace('/(tabs)/login');
+    } catch (e) {
+        if (__DEV__) console.warn('[AuthStackGuard] replace /(tabs)/login', e);
+    }
+}
+
+/** After logout or when session is missing, keep users off protected stack routes and open sign-in. */
 function AuthStackGuard() {
+    const hydrated = useAuthPersistHydrated();
     const isLoggingOut = useAuthStore((s) => s.isLoggingOut);
     const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-    const prevLoggingOut = useRef(false);
     const segments = useSegments();
-    const rootSegment = segments[0];
+    const segmentKey = segments.join('/');
     const unauthKickRef = useRef(false);
 
     useEffect(() => {
@@ -21,39 +38,22 @@ function AuthStackGuard() {
     }, [isLoggingOut]);
 
     useEffect(() => {
-        const endedLogout = prevLoggingOut.current && !isLoggingOut;
-        prevLoggingOut.current = isLoggingOut;
-        if (!endedLogout || isAuthenticated) return;
-        const id = requestAnimationFrame(() => {
-            try {
-                router.replace('/');
-            } catch {
-                /* noop */
-            }
-        });
-        return () => cancelAnimationFrame(id);
-    }, [isLoggingOut, isAuthenticated]);
-
-    useEffect(() => {
-        if (rootSegment !== '(tabs)') {
+        if (!hydrated) return;
+        if (isLoggingOut || isAuthenticated) {
             unauthKickRef.current = false;
             return;
         }
-        if (isAuthenticated || isLoggingOut) {
+        if (isPublicUnauthenticatedRoute(segments)) {
             unauthKickRef.current = false;
             return;
         }
         if (unauthKickRef.current) return;
         unauthKickRef.current = true;
         const id = requestAnimationFrame(() => {
-            try {
-                router.replace('/');
-            } catch {
-                /* noop */
-            }
+            navigateToSignIn();
         });
         return () => cancelAnimationFrame(id);
-    }, [rootSegment, isAuthenticated, isLoggingOut]);
+    }, [hydrated, isLoggingOut, isAuthenticated, segmentKey]);
 
     return null;
 }

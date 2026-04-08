@@ -17,20 +17,21 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.lihrms.mobile",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    },
-    "extra": {
-      "eas": {
-        "projectId": "22373c2c-f18d-4fb6-bb6e-e7a140166995"
-      }
     },
     "plugins": [
       "@react-native-community/datetimepicker",
@@ -47,6 +48,12 @@
           "locationWhenInUsePermission": "Allow $(PRODUCT_NAME) to record your location with on-duty requests, matching the workspace."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "a6df1916-5889-4ffa-a22f-ba617c936e61"
+      }
+    },
+    "owner": "raviburaga"
   }
 }

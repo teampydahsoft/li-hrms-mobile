@@ -4,7 +4,6 @@ import {
     Text,
     ScrollView,
     TouchableOpacity,
-    ActivityIndicator,
     Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -15,6 +14,11 @@ import { ChevronLeft, Calendar, Clock, User } from 'lucide-react-native';
 import { api, ApiEnvelope } from '../../src/api/client';
 import { ApprovalTimeline, type TimelineStep } from '../../src/components/ApprovalTimeline';
 import { formatDateRangeIST, formatDateTimeIST } from '../../src/utils/dateIST';
+import { useAuthStore } from '../../src/store/useAuthStore';
+import { canActionLeaves, isManagementRole } from '../../src/lib/permissions';
+import { canCurrentUserActOnLeaveLikeItem } from '../../src/utils/workflowPermissions';
+import { SkeletonBlock } from '../../src/components/Skeleton';
+import { EmployeeMetaCard } from '../../src/components/EmployeeMetaCard';
 
 type ChainStep = TimelineStep;
 
@@ -26,20 +30,35 @@ function statusBadge(status: string): { wrap: string; text: string } {
     return { wrap: 'bg-neutral-100', text: 'text-neutral-700' };
 }
 
+function nodeName(v: unknown): string {
+    if (!v) return '—';
+    if (typeof v === 'string') return v;
+    if (typeof v === 'object' && v !== null && 'name' in v) return String((v as { name?: unknown }).name || '—');
+    return '—';
+}
+
 export default function LeaveDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const router = useRouter();
     const [loading, setLoading] = useState(true);
     const [row, setRow] = useState<Record<string, unknown> | null>(null);
+    const [allowHigherAuthority, setAllowHigherAuthority] = useState(false);
+    const { user } = useAuthStore();
 
     const load = useCallback(async () => {
         if (!id) return;
         setLoading(true);
         try {
-            const res = await api.getLeave(String(id));
+            const [res, settingsRes] = await Promise.all([
+                api.getLeave(String(id)),
+                api.getLeaveSettings('leave'),
+            ]);
             const body = res.data as ApiEnvelope & Record<string, unknown>;
             if (body.success && body.data) setRow(body.data as Record<string, unknown>);
             else Alert.alert('Error', (body.message as string) || 'Could not load leave');
+            const settingsBody = settingsRes.data as ApiEnvelope<Record<string, unknown>>;
+            const wf = (settingsBody.data as { workflow?: { allowHigherAuthorityToApproveLowerLevels?: boolean } } | undefined)?.workflow;
+            setAllowHigherAuthority(!!wf?.allowHigherAuthorityToApproveLowerLevels);
         } catch {
             Alert.alert('Error', 'Network error');
         } finally {
@@ -53,6 +72,35 @@ export default function LeaveDetailScreen() {
 
     const status = String(row?.status ?? '');
     const canCancel = status === 'pending' || status === 'in_progress';
+    const canApproveReject =
+        canActionLeaves(user) &&
+        !['approved', 'rejected', 'cancelled'].includes(status) &&
+        canCurrentUserActOnLeaveLikeItem({
+            item: row as unknown as { status?: string; workflow?: { [k: string]: unknown }; odType?: string },
+            user,
+            isOD: false,
+            allowHigherAuthority,
+        });
+    const showEmployeeMeta = isManagementRole(user);
+    const emp = row?.employeeId as
+        | {
+              emp_no?: string;
+              employee_name?: string;
+              first_name?: string;
+              last_name?: string;
+              designation?: unknown;
+              designation_id?: unknown;
+              department?: unknown;
+              department_id?: unknown;
+              division?: unknown;
+              division_id?: unknown;
+          }
+        | undefined;
+    const empName = String(emp?.employee_name || [emp?.first_name, emp?.last_name].filter(Boolean).join(' ') || '—');
+    const empNo = String(emp?.emp_no || row?.emp_no || '—');
+    const desig = nodeName(emp?.designation || emp?.designation_id || (row as Record<string, unknown> | null)?.designation);
+    const dep = nodeName(emp?.department || emp?.department_id || (row as Record<string, unknown> | null)?.department);
+    const div = nodeName(emp?.division || emp?.division_id || (row as Record<string, unknown> | null)?.division);
 
     const chain = ((row?.workflow as { approvalChain?: ChainStep[] } | undefined)?.approvalChain ||
         []) as ChainStep[];
@@ -79,6 +127,30 @@ export default function LeaveDetailScreen() {
         ]);
     };
 
+    const onAction = (action: 'approve' | 'reject') => {
+        Alert.alert(
+            action === 'approve' ? 'Approve leave' : 'Reject leave',
+            `Are you sure you want to ${action} this request?`,
+            [
+                { text: 'No', style: 'cancel' },
+                {
+                    text: action === 'approve' ? 'Approve' : 'Reject',
+                    style: action === 'approve' ? 'default' : 'destructive',
+                    onPress: async () => {
+                        try {
+                            const res = await api.processLeaveAction(String(id), action);
+                            const body = res.data as ApiEnvelope;
+                            if (!body.success) throw new Error(body.message || body.error || 'Could not process action');
+                            await load();
+                        } catch (e) {
+                            Alert.alert('Action failed', e instanceof Error ? e.message : 'Could not process action');
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
     const sb = statusBadge(status);
     const dateRangeLabel = formatDateRangeIST(row?.fromDate, row?.toDate);
     const appliedLabel = row?.appliedAt ? formatDateTimeIST(row.appliedAt) : '';
@@ -102,8 +174,12 @@ export default function LeaveDetailScreen() {
                 </View>
 
                 {loading ? (
-                    <View className="flex-1 items-center justify-center">
-                        <ActivityIndicator size="large" color="#10B981" />
+                    <View className="flex-1 px-6 pt-6">
+                        <SkeletonBlock height={24} width="30%" />
+                        <SkeletonBlock height={48} width="45%" style={{ marginTop: 12 }} />
+                        <SkeletonBlock height={180} style={{ marginTop: 14 }} radius={20} />
+                        <SkeletonBlock height={140} style={{ marginTop: 14 }} radius={20} />
+                        <SkeletonBlock height={56} style={{ marginTop: 14 }} radius={16} />
                     </View>
                 ) : !row ? (
                     <View className="flex-1 items-center justify-center px-8">
@@ -140,6 +216,15 @@ export default function LeaveDetailScreen() {
                                 </Text>
                             </View>
                         </View>
+                        {showEmployeeMeta ? (
+                            <EmployeeMetaCard
+                                empNo={empNo}
+                                empName={empName}
+                                designation={desig}
+                                division={div}
+                                department={dep}
+                            />
+                        ) : null}
 
                         <View className="bg-white rounded-[28px] border-2 border-neutral-100 p-5 mb-4">
                             <Text className="text-neutral-400 text-[10px] font-black uppercase tracking-widest mb-2">Purpose</Text>
@@ -175,6 +260,22 @@ export default function LeaveDetailScreen() {
                             >
                                 <Text className="text-rose-700 font-black uppercase tracking-widest text-xs">Withdraw request</Text>
                             </TouchableOpacity>
+                        )}
+                        {canApproveReject && (
+                            <View className="mb-10 flex-row gap-3">
+                                <TouchableOpacity
+                                    onPress={() => onAction('approve')}
+                                    className="flex-1 items-center rounded-2xl bg-emerald-600 py-4"
+                                >
+                                    <Text className="text-xs font-black uppercase tracking-widest text-white">Approve</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    onPress={() => onAction('reject')}
+                                    className="flex-1 items-center rounded-2xl bg-rose-600 py-4"
+                                >
+                                    <Text className="text-xs font-black uppercase tracking-widest text-white">Reject</Text>
+                                </TouchableOpacity>
+                            </View>
                         )}
                     </ScrollView>
                 )}

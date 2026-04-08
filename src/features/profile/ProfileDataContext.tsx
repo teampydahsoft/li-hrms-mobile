@@ -76,6 +76,11 @@ export function ProfileDataProvider({ children }: { children: ReactNode }) {
                         employeeId?: string;
                         phone?: string;
                         phone_number?: string;
+                        featureControl?: string[];
+                        scope?: 'global' | 'restricted';
+                        dataScope?: 'all' | 'department' | 'division' | 'own';
+                        departments?: Array<string | { _id?: string; name?: string }>;
+                        allowedDivisions?: Array<string | { _id?: string; name?: string }>;
                     };
                     const uid = u.id ?? u._id;
                     const phone = u.phone ?? u.phone_number;
@@ -87,6 +92,11 @@ export function ProfileDataProvider({ children }: { children: ReactNode }) {
                         emp_no: u.emp_no,
                         employeeRef: u.employeeId != null ? String(u.employeeId) : undefined,
                         phone,
+                        featureControl: Array.isArray(u.featureControl) ? u.featureControl : undefined,
+                        scope: u.scope,
+                        dataScope: u.dataScope,
+                        departments: Array.isArray(u.departments) ? u.departments : undefined,
+                        allowedDivisions: Array.isArray(u.allowedDivisions) ? u.allowedDivisions : undefined,
                     });
 
                     const empIdentifier = String(u.emp_no ?? u.employeeId ?? '').trim();

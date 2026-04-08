@@ -50,6 +50,36 @@ export type ApiEnvelope<T = unknown> = {
     filename?: string;
 };
 
+export type LiveAttendanceFilterOption = { id: string; name: string };
+export type LiveAttendanceEmployee = {
+    id: string;
+    empNo: string;
+    name: string;
+    department?: string;
+    designation?: string;
+    division?: string;
+    shift?: string;
+    inTime?: string | null;
+    outTime?: string | null;
+    hoursWorked?: number;
+    isLate?: boolean;
+    lateMinutes?: number;
+    isEarlyOut?: boolean;
+    earlyOutMinutes?: number;
+};
+export type LiveAttendanceReportData = {
+    date: string;
+    summary: {
+        currentlyWorking: number;
+        completedShift: number;
+        totalPresent: number;
+        totalActiveEmployees: number;
+        absentEmployees: number;
+    };
+    currentlyWorking: LiveAttendanceEmployee[];
+    completedShift: LiveAttendanceEmployee[];
+};
+
 export const api = {
     login: (data: { email: string; password: string }) => apiClient.post<ApiEnvelope>('/auth/login', data),
     getMe: () => apiClient.get<ApiEnvelope>('/auth/me'),
@@ -134,6 +164,50 @@ export const api = {
         const qs = q.toString();
         return apiClient.get<ApiEnvelope>(`/leaves/my${qs ? `?${qs}` : ''}`);
     },
+    getLeaves: (filters?: {
+        status?: string;
+        fromDate?: string;
+        toDate?: string;
+        page?: number;
+        limit?: number;
+        search?: string;
+        department?: string;
+        division?: string;
+    }) => {
+        const q = new URLSearchParams();
+        if (filters?.status) q.set('status', filters.status);
+        if (filters?.fromDate) q.set('fromDate', filters.fromDate);
+        if (filters?.toDate) q.set('toDate', filters.toDate);
+        if (filters?.page != null) q.set('page', String(filters.page));
+        if (filters?.limit != null) q.set('limit', String(filters.limit));
+        if (filters?.search) q.set('search', filters.search);
+        if (filters?.department) q.set('department', filters.department);
+        if (filters?.division) q.set('division', filters.division);
+        const qs = q.toString();
+        return apiClient.get<ApiEnvelope>(`/leaves${qs ? `?${qs}` : ''}`);
+    },
+    getPendingLeaveApprovals: (filters?: {
+        page?: number;
+        limit?: number;
+        search?: string;
+        fromDate?: string;
+        toDate?: string;
+        department?: string;
+        division?: string;
+    }) => {
+        const q = new URLSearchParams();
+        if (filters?.page != null) q.set('page', String(filters.page));
+        if (filters?.limit != null) q.set('limit', String(filters.limit));
+        if (filters?.search) q.set('search', filters.search);
+        if (filters?.fromDate) q.set('fromDate', filters.fromDate);
+        if (filters?.toDate) q.set('toDate', filters.toDate);
+        if (filters?.department) q.set('department', filters.department);
+        if (filters?.division) q.set('division', filters.division);
+        const qs = q.toString();
+        return apiClient.get<ApiEnvelope>(`/leaves/pending-approvals${qs ? `?${qs}` : ''}`);
+    },
+    processLeaveAction: (id: string, action: 'approve' | 'reject', comments?: string) =>
+        apiClient.put<ApiEnvelope>(`/leaves/${id}/action`, { action, comments }),
 
     getMyODs: (filters?: { status?: string; fromDate?: string; toDate?: string }) => {
         const q = new URLSearchParams();
@@ -143,6 +217,50 @@ export const api = {
         const qs = q.toString();
         return apiClient.get<ApiEnvelope>(`/leaves/od/my${qs ? `?${qs}` : ''}`);
     },
+    getODs: (filters?: {
+        status?: string;
+        fromDate?: string;
+        toDate?: string;
+        page?: number;
+        limit?: number;
+        search?: string;
+        department?: string;
+        division?: string;
+    }) => {
+        const q = new URLSearchParams();
+        if (filters?.status) q.set('status', filters.status);
+        if (filters?.fromDate) q.set('fromDate', filters.fromDate);
+        if (filters?.toDate) q.set('toDate', filters.toDate);
+        if (filters?.page != null) q.set('page', String(filters.page));
+        if (filters?.limit != null) q.set('limit', String(filters.limit));
+        if (filters?.search) q.set('search', filters.search);
+        if (filters?.department) q.set('department', filters.department);
+        if (filters?.division) q.set('division', filters.division);
+        const qs = q.toString();
+        return apiClient.get<ApiEnvelope>(`/leaves/od${qs ? `?${qs}` : ''}`);
+    },
+    getPendingODApprovals: (filters?: {
+        page?: number;
+        limit?: number;
+        search?: string;
+        fromDate?: string;
+        toDate?: string;
+        department?: string;
+        division?: string;
+    }) => {
+        const q = new URLSearchParams();
+        if (filters?.page != null) q.set('page', String(filters.page));
+        if (filters?.limit != null) q.set('limit', String(filters.limit));
+        if (filters?.search) q.set('search', filters.search);
+        if (filters?.fromDate) q.set('fromDate', filters.fromDate);
+        if (filters?.toDate) q.set('toDate', filters.toDate);
+        if (filters?.department) q.set('department', filters.department);
+        if (filters?.division) q.set('division', filters.division);
+        const qs = q.toString();
+        return apiClient.get<ApiEnvelope>(`/leaves/od/pending-approvals${qs ? `?${qs}` : ''}`);
+    },
+    processODAction: (id: string, action: 'approve' | 'reject', comments?: string) =>
+        apiClient.put<ApiEnvelope>(`/leaves/od/${id}/action`, { action, comments }),
 
     getLeave: (id: string) => apiClient.get<ApiEnvelope>(`/leaves/${id}`),
 
@@ -191,6 +309,54 @@ export const api = {
         const qs = q.toString();
         return apiClient.get<ApiEnvelope>(`/loans/my${qs ? `?${qs}` : ''}`);
     },
+    getLoans: (filters?: {
+        status?: string;
+        requestType?: 'loan' | 'salary_advance';
+        page?: number;
+        limit?: number;
+        search?: string;
+        department?: string;
+        division?: string;
+    }) => {
+        const q = new URLSearchParams();
+        if (filters?.status) q.set('status', filters.status);
+        if (filters?.requestType) q.set('requestType', filters.requestType);
+        if (filters?.page != null) q.set('page', String(filters.page));
+        if (filters?.limit != null) q.set('limit', String(filters.limit));
+        if (filters?.search) q.set('search', filters.search);
+        if (filters?.department) q.set('department', filters.department);
+        if (filters?.division) q.set('division', filters.division);
+        const qs = q.toString();
+        return apiClient.get<ApiEnvelope>(`/loans${qs ? `?${qs}` : ''}`);
+    },
+    getPendingLoanApprovals: (filters?: {
+        page?: number;
+        limit?: number;
+        search?: string;
+        fromDate?: string;
+        toDate?: string;
+        department?: string;
+        division?: string;
+    }) => {
+        const q = new URLSearchParams();
+        if (filters?.page != null) q.set('page', String(filters.page));
+        if (filters?.limit != null) q.set('limit', String(filters.limit));
+        if (filters?.search) q.set('search', filters.search);
+        if (filters?.fromDate) q.set('fromDate', filters.fromDate);
+        if (filters?.toDate) q.set('toDate', filters.toDate);
+        if (filters?.department) q.set('department', filters.department);
+        if (filters?.division) q.set('division', filters.division);
+        const qs = q.toString();
+        return apiClient.get<ApiEnvelope>(`/loans/pending-approvals${qs ? `?${qs}` : ''}`);
+    },
+    processLoanAction: (
+        id: string,
+        action: 'approve' | 'reject' | 'forward',
+        comments?: string,
+        approvalAmount?: number,
+        approvalInterestRate?: number
+    ) =>
+        apiClient.put<ApiEnvelope>(`/loans/${id}/action`, { action, comments, approvalAmount, approvalInterestRate }),
 
     getLoan: (id: string) => apiClient.get<ApiEnvelope>(`/loans/${id}`),
 
@@ -217,6 +383,19 @@ export const api = {
     processGuarantorAction: (loanId: string, action: 'accepted' | 'rejected', remarks?: string) =>
         apiClient.put<ApiEnvelope>(`/loans/${loanId}/guarantor-action`, { action, remarks }),
     getLoanTransactions: (id: string) => apiClient.get<ApiEnvelope>(`/loans/${id}/transactions`),
+
+    getLiveAttendanceFilterOptions: () =>
+        apiClient.get<ApiEnvelope<{ divisions: LiveAttendanceFilterOption[]; departments: LiveAttendanceFilterOption[]; shifts: LiveAttendanceFilterOption[] }>>(
+            '/attendance/reports/live/filters'
+        ),
+    getLiveAttendanceReport: (params?: { date?: string; division?: string; department?: string; shift?: string }) => {
+        const q = new URLSearchParams();
+        if (params?.date) q.set('date', params.date);
+        if (params?.division) q.set('division', params.division);
+        if (params?.department) q.set('department', params.department);
+        if (params?.shift) q.set('shift', params.shift);
+        return apiClient.get<ApiEnvelope<LiveAttendanceReportData>>(`/attendance/reports/live${q.toString() ? `?${q.toString()}` : ''}`);
+    },
 
     /**
      * Upload OD evidence (React Native FormData file part).
