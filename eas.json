@@ -11,8 +11,7 @@
         "distribution": "internal"
       },
       "env": {
-        "EXPO_PUBLIC_APP_VARIANT": "unit1",
-        "EXPO_PUBLIC_API_ORIGIN": "https://hrmsu1.sleipl.com"
+        "EXPO_PUBLIC_APP_VARIANT": "unit1"
       }
     },
     "development-simulator": {
@@ -22,8 +21,7 @@
         "simulator": true
       },
       "env": {
-        "EXPO_PUBLIC_APP_VARIANT": "unit1",
-        "EXPO_PUBLIC_API_ORIGIN": "https://hrmsu1.sleipl.com"
+        "EXPO_PUBLIC_APP_VARIANT": "unit1"
       }
     },
     "preview": {
@@ -33,8 +31,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_APP_VARIANT": "unit1",
-        "EXPO_PUBLIC_API_ORIGIN": "https://hrmsu1.sleipl.com"
+        "EXPO_PUBLIC_APP_VARIANT": "unit1"
       }
     },
     "production": {
@@ -43,8 +40,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_APP_VARIANT": "unit1",
-        "EXPO_PUBLIC_API_ORIGIN": "https://hrmsu1.sleipl.com"
+        "EXPO_PUBLIC_APP_VARIANT": "unit1"
       }
     },
     "unit2-development": {
