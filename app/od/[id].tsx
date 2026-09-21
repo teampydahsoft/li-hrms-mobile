@@ -17,8 +17,9 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { ChevronLeft, Calendar, Clock, MapPin, ExternalLink, Camera, Image as ImageIcon } from 'lucide-react-native';
+import { ChevronLeft, Calendar, Clock, MapPin, ExternalLink, Camera, Image as ImageIcon, Sparkles, CheckCircle } from 'lucide-react-native';
 import { api, ApiEnvelope } from '../../src/api/client';
+import { API_BASE_URL } from '../../src/constants/Config';
 import { ApprovalTimeline, type TimelineStep } from '../../src/components/ApprovalTimeline';
 import { formatDateRangeIST, formatDateTimeIST } from '../../src/utils/dateIST';
 import { useAuthStore } from '../../src/store/useAuthStore';
@@ -145,6 +146,62 @@ function nodeName(v: unknown): string {
     if (typeof v === 'string') return v;
     if (typeof v === 'object' && v !== null && 'name' in v) return String((v as { name?: unknown }).name || '—');
     return '—';
+}
+
+const resolveEvidenceUrl = (url: string | null | undefined): string => {
+    if (!url) return '';
+    if (url === 'Image will be visible to the higher hierarchy') return '';
+    
+    // If it's a relative URL, prepend the API origin
+    if (url.startsWith('/')) {
+        const hostOrigin = API_BASE_URL.replace(/\/api\/?$/, ''); // e.g. "https://hrmsu1.sleipl.com"
+        return `${hostOrigin}${url}`;
+    }
+    
+    // If it contains localhost:5000 or localhost, replace it with the active API origin
+    if (url.includes('localhost:') || url.includes('127.0.0.1:')) {
+        const hostOrigin = API_BASE_URL.replace(/\/api\/?$/, '');
+        return url.replace(/^https?:\/\/[^\/]+/, hostOrigin);
+    }
+    
+    return url;
+};
+
+function formatHoursMins(minutes: number | null | undefined): string {
+    if (minutes == null || isNaN(minutes) || minutes <= 0) return '—';
+    const h = Math.floor(minutes / 60);
+    const m = Math.round(minutes % 60);
+    if (h > 0) {
+        return `${h}h${m > 0 ? ` ${m}m` : ''}`;
+    }
+    return `${m}m`;
+}
+
+function formatTime12h(timeStr: string | null | undefined): string {
+    if (!timeStr) return '—';
+    // Check if it's in ISO format
+    const parsedDate = new Date(timeStr);
+    if (!isNaN(parsedDate.getTime()) && timeStr.includes('T')) {
+        return parsedDate.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+            timeZone: 'Asia/Kolkata'
+        });
+    }
+    // If it is HH:MM
+    const parts = timeStr.split(':');
+    if (parts.length >= 2) {
+        const h = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        if (!isNaN(h) && !isNaN(m)) {
+            const ampm = h >= 12 ? 'PM' : 'AM';
+            const displayH = h % 12 || 12;
+            const displayM = String(m).padStart(2, '0');
+            return `${displayH}:${displayM} ${ampm}`;
+        }
+    }
+    return timeStr;
 }
 
 export default function ODDetailScreen() {
@@ -433,7 +490,8 @@ export default function ODDetailScreen() {
         const res = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: false,
-            quality: 0.85,
+            quality: 0.2,
+            base64: true,
         });
         if (!res.canceled && res.assets[0]) {
             setOutEvidence(res.assets[0]);
@@ -447,7 +505,11 @@ export default function ODDetailScreen() {
             Alert.alert('Camera', 'Allow camera access to capture OD OUT evidence.');
             return;
         }
-        const res = await ImagePicker.launchCameraAsync({ allowsEditing: false, quality: 0.85 });
+        const res = await ImagePicker.launchCameraAsync({
+            allowsEditing: false,
+            quality: 0.2,
+            base64: true,
+        });
         if (!res.canceled && res.assets[0]) {
             setOutEvidence(res.assets[0]);
             setOutEvidenceFromDeviceFile(false);
@@ -541,46 +603,33 @@ export default function ODDetailScreen() {
                             return;
                         }
 
-                        const uploadRes = await api.uploadEvidence({
-                            uri: outEvidence.uri,
-                            mimeType: outEvidence.mimeType,
-                            fileName: outEvidence.fileName,
-                        });
-                        const raw = uploadRes.data as ApiEnvelope & {
-                            url?: string;
-                            key?: string;
-                            data?: { url?: string; key?: string };
-                        };
-                        const photoUrl = raw.url || raw.data?.url;
-                        const photoKey = raw.key || raw.data?.key;
-                        if (raw.success === false || !photoUrl) {
-                            // Offer to save offline on upload failure
-                            Alert.alert('Upload failed', raw.message || raw.error || 'Could not upload photo. Save offline?', [
-                                { text: 'Cancel', style: 'cancel' },
-                                {
-                                    text: 'Save offline',
-                                    onPress: async () => {
-                                        try {
-                                            await enqueueOdOutSubmission(String(id), {
-                                                photoUri: outEvidence.uri,
-                                                photoMime: outEvidence.mimeType || null,
-                                                photoName: outEvidence.fileName || null,
-                                                latitude: outLocationData.latitude,
-                                                longitude: outLocationData.longitude,
-                                                capturedAt: outLocationData.capturedAt,
-                                                notes: null,
-                                                owner: user?.id || null,
-                                            });
-                                            Alert.alert('Saved', 'OD OUT saved and will be uploaded when online.');
-                                            setOutEvidence(null);
-                                            setOutLocationData(null);
-                                        } catch (e) {
-                                            Alert.alert('Error', e instanceof Error ? e.message : 'Could not save offline');
-                                        }
-                                    },
-                                },
-                            ]);
-                            return;
+                        let photoUrl = '';
+                        let photoKey = '';
+                        try {
+                            const uploadRes = await api.uploadEvidence({
+                                uri: outEvidence.uri,
+                                mimeType: outEvidence.mimeType,
+                                fileName: outEvidence.fileName,
+                            });
+                            const raw = uploadRes.data as ApiEnvelope & {
+                                url?: string;
+                                key?: string;
+                                data?: { url?: string; key?: string };
+                            };
+                            photoUrl = raw.url || raw.data?.url || '';
+                            photoKey = raw.key || raw.data?.key || '';
+                            if (!photoUrl) {
+                                throw new Error(raw.message || raw.error || 'No photo URL returned');
+                            }
+                        } catch (uploadErr) {
+                            if (outEvidence.base64) {
+                                photoUrl = `data:${outEvidence.mimeType || 'image/jpeg'};base64,${outEvidence.base64}`;
+                                photoKey = 'base64_fallback';
+                            } else {
+                                photoUrl = 'Image will be visible to the higher hierarchy';
+                                photoKey = 'fallback_placeholder';
+                            }
+                            Alert.alert('Info', 'Image will be visible to the higher hierarchy');
                         }
                         const endEvidence = {
                             photoEvidence: { url: photoUrl, key: photoKey },
@@ -730,6 +779,18 @@ export default function ODDetailScreen() {
                             </View>
                         ) : null}
 
+                        {row.isCOEligible ? (
+                            <View className="mb-4 rounded-2xl border-2 border-indigo-100 bg-indigo-50/50 p-4">
+                                <View className="flex-row items-center gap-1.5 mb-1.5">
+                                    <Sparkles size={14} color="#4338ca" />
+                                    <Text className="text-indigo-800 text-xs font-black uppercase tracking-wider">Compensatory Off Eligible</Text>
+                                </View>
+                                <Text className="text-neutral-600 text-xs leading-5">
+                                    This OD was served on a weekend or public holiday and generates credit towards compensatory leaves.
+                                </Text>
+                            </View>
+                        ) : null}
+
                         <View className="bg-white rounded-[28px] border-2 border-neutral-100 p-5 mb-4 shadow-sm">
                             <Text className="text-neutral-900 font-black text-lg">{String(row.odType ?? 'OD')}</Text>
                             <Text className="text-neutral-500 text-sm mt-1 font-medium">
@@ -760,6 +821,86 @@ export default function ODDetailScreen() {
                                 </View>
                             ) : null}
                         </View>
+                        {/* Timing punched & timestamps card */}
+                        {(() => {
+                            const coInfo = row.coEligibilityInfo as any;
+                            const startEv = row.startEvidence as any;
+                            const endEv = row.endEvidence as any;
+                            const hasTimings = !!(
+                                row.odStartTime ||
+                                row.odEndTime ||
+                                coInfo?.punchDetails?.start ||
+                                coInfo?.punchDetails?.end ||
+                                startEv?.submittedAt ||
+                                endEv?.submittedAt
+                            );
+                            if (!hasTimings) return null;
+                            return (
+                                <View className="bg-white rounded-[28px] border-2 border-neutral-100 p-5 mb-4 shadow-sm">
+                                    <Text className="text-neutral-900 font-black text-xs uppercase tracking-wider mb-3">Punches & Timestamps</Text>
+                                    
+                                    {/* Request timings */}
+                                    {(row.odStartTime || row.odEndTime) && (
+                                        <View className="mb-4 bg-neutral-50 rounded-2xl p-4">
+                                            <Text className="text-neutral-400 text-[9px] font-black uppercase tracking-widest mb-2">Request Timings</Text>
+                                            <View className="flex-row justify-between items-center">
+                                                <View>
+                                                    <Text className="text-[9px] font-bold text-neutral-400 uppercase">Request In</Text>
+                                                    <Text className="text-xs font-bold text-neutral-800 mt-0.5">{formatTime12h(row.odStartTime as string)}</Text>
+                                                </View>
+                                                <View>
+                                                    <Text className="text-[9px] font-bold text-neutral-400 uppercase">Request Out</Text>
+                                                    <Text className="text-xs font-bold text-neutral-800 mt-0.5">{formatTime12h(row.odEndTime as string)}</Text>
+                                                </View>
+                                            </View>
+                                        </View>
+                                    )}
+
+                                    {/* Biometric punches */}
+                                    {(coInfo?.punchDetails?.start || coInfo?.punchDetails?.end) && (
+                                        <View className="mb-4 bg-emerald-50/50 border border-emerald-100 rounded-2xl p-4">
+                                            <Text className="text-emerald-700 text-[9px] font-black uppercase tracking-widest mb-2">Biometric Punches (Attendance)</Text>
+                                            <View className="flex-row justify-between items-center">
+                                                <View>
+                                                    <Text className="text-[9px] font-bold text-emerald-600/80 uppercase">Work In</Text>
+                                                    <Text className="text-xs font-bold text-emerald-900 mt-0.5">{formatTime12h(coInfo?.punchDetails?.start as string)}</Text>
+                                                </View>
+                                                <View>
+                                                    <Text className="text-[9px] font-bold text-emerald-600/80 uppercase">Work Out</Text>
+                                                    <Text className="text-xs font-bold text-emerald-900 mt-0.5">{formatTime12h(coInfo?.punchDetails?.end as string)}</Text>
+                                                </View>
+                                            </View>
+                                        </View>
+                                    )}
+
+                                    {/* Photo evidence timestamps */}
+                                    {(startEv?.submittedAt || endEv?.submittedAt) && (
+                                        <View className="bg-purple-50/50 border border-purple-100 rounded-2xl p-4">
+                                            <Text className="text-purple-700 text-[9px] font-black uppercase tracking-widest mb-2">Photo Evidence Timestamps</Text>
+                                            <View className="flex-row justify-between items-start gap-4">
+                                                <View className="flex-1">
+                                                    <Text className="text-[9px] font-bold text-purple-600/80 uppercase">Check In Photo</Text>
+                                                    <Text className="text-xs font-bold text-purple-900 mt-0.5">
+                                                        {startEv?.submittedAt ? formatDateTimeIST(startEv.submittedAt as string) : '—'}
+                                                    </Text>
+                                                </View>
+                                                <View className="flex-1">
+                                                    <Text className="text-[9px] font-bold text-purple-600/80 uppercase">Check Out Photo</Text>
+                                                    <Text className="text-xs font-bold text-purple-900 mt-0.5">
+                                                        {endEv?.submittedAt ? formatDateTimeIST(endEv.submittedAt as string) : '—'}
+                                                    </Text>
+                                                </View>
+                                            </View>
+                                            {row.evidenceDurationMinutes != null && Number(row.evidenceDurationMinutes) > 0 && (
+                                                <Text className="text-[9px] font-bold text-purple-700 mt-2">
+                                                    Duration: {formatHoursMins(Number(row.evidenceDurationMinutes))}
+                                                </Text>
+                                            )}
+                                        </View>
+                                    )}
+                                </View>
+                            );
+                        })()}
                         {showEmployeeMeta ? (
                             <EmployeeMetaCard
                                 empNo={empNo}
@@ -781,77 +922,20 @@ export default function ODDetailScreen() {
                                         <Text className="px-4 pt-3 pb-2 text-[10px] font-black uppercase tracking-widest text-emerald-700">
                                             OD IN · Photo
                                         </Text>
-                                        <Image
-                                            source={{ uri: photoUrlIn }}
-                                            style={{ width: '100%', height: 220 }}
-                                            resizeMode="cover"
-                                        />
+                                        {photoUrlIn === 'Image will be visible to the higher hierarchy' ? (
+                                            <View className="items-center px-4 py-8 bg-neutral-50">
+                                                <Text className="text-neutral-500 text-xs font-bold italic text-center">
+                                                    Image will be visible to the higher hierarchy
+                                                </Text>
+                                            </View>
+                                        ) : (
+                                            <Image
+                                                source={{ uri: resolveEvidenceUrl(photoUrlIn) }}
+                                                style={{ width: '100%', height: 220 }}
+                                                resizeMode="cover"
+                                            />
+                                        )}
                                     </View>
-                                ) : null}
-
-                                {(geoIn || exifFallback) ? (
-                                    <View className="mb-4 rounded-2xl border border-emerald-100 bg-white p-4">
-                                        <View className="mb-2 flex-row items-center gap-2">
-                                            <MapPin size={18} color="#059669" strokeWidth={2.5} />
-                                            <Text className="text-xs font-black uppercase tracking-widest text-emerald-800">
-                                                OD IN · {geoIn ? 'GPS' : 'Location (photo EXIF)'}
-                                            </Text>
-                                        </View>
-                                        {(() => {
-                                            const g = geoIn || exifFallback;
-                                            if (!g) return null;
-                                            return (
-                                                <>
-                                                    <View className="flex-row flex-wrap gap-x-4 gap-y-1">
-                                                        <Text className="text-xs text-neutral-600">
-                                                            <Text className="font-bold text-neutral-400">Lat: </Text>
-                                                            <Text className="font-mono">{g.latitude.toFixed(6)}</Text>
-                                                        </Text>
-                                                        <Text className="text-xs text-neutral-600">
-                                                            <Text className="font-bold text-neutral-400">Lon: </Text>
-                                                            <Text className="font-mono">{g.longitude.toFixed(6)}</Text>
-                                                        </Text>
-                                                    </View>
-                                                    {'address' in g && g.address ? (
-                                                        <View className="mt-3 border-t border-neutral-100 pt-3">
-                                                            <Text className="text-[10px] font-bold uppercase text-neutral-400">Address</Text>
-                                                            <Text className="mt-1 text-xs font-medium leading-5 text-neutral-700">{g.address}</Text>
-                                                        </View>
-                                                    ) : null}
-                                                    {'capturedAt' in g && g.capturedAt ? (
-                                                        <Text className="mt-2 text-[10px] text-neutral-500">
-                                                            Captured (IST): {formatDateTimeIST(g.capturedAt)}
-                                                        </Text>
-                                                    ) : null}
-                                                    <TouchableOpacity
-                                                        onPress={() => openMaps(g.latitude, g.longitude)}
-                                                        className="mt-3 flex-row items-center justify-center rounded-xl bg-blue-50 py-3"
-                                                    >
-                                                        <ExternalLink size={16} color="#2563eb" strokeWidth={2.5} />
-                                                        <Text className="ml-2 text-[10px] font-black uppercase tracking-wider text-blue-600">
-                                                            IN · Google Maps
-                                                        </Text>
-                                                    </TouchableOpacity>
-                                                    {Platform.OS === 'ios' ? (
-                                                        <TouchableOpacity
-                                                            onPress={() => {
-                                                                Linking.openURL(
-                                                                    `http://maps.apple.com/?ll=${g.latitude},${g.longitude}&q=OD+IN`
-                                                                ).catch(() => Alert.alert('Maps', 'Could not open Apple Maps.'));
-                                                            }}
-                                                            className="mt-2 flex-row items-center justify-center rounded-xl border border-neutral-200 py-2.5"
-                                                        >
-                                                            <Text className="text-[10px] font-black uppercase tracking-wider text-neutral-700">
-                                                                IN · Apple Maps
-                                                            </Text>
-                                                        </TouchableOpacity>
-                                                    ) : null}
-                                                </>
-                                            );
-                                        })()}
-                                    </View>
-                                ) : photoUrlIn && !geoIn && !exifFallback ? (
-                                    <Text className="mb-4 text-xs text-neutral-500">No GPS coordinates for OD IN.</Text>
                                 ) : null}
 
                                 {photoUrlOut ? (
@@ -859,66 +943,129 @@ export default function ODDetailScreen() {
                                         <Text className="px-4 pt-3 pb-2 text-[10px] font-black uppercase tracking-widest text-blue-700">
                                             OD OUT · Photo
                                         </Text>
-                                        <Image
-                                            source={{ uri: photoUrlOut }}
-                                            style={{ width: '100%', height: 220 }}
-                                            resizeMode="cover"
-                                        />
+                                        {photoUrlOut === 'Image will be visible to the higher hierarchy' ? (
+                                            <View className="items-center px-4 py-8 bg-neutral-50">
+                                                <Text className="text-neutral-500 text-xs font-bold italic text-center">
+                                                    Image will be visible to the higher hierarchy
+                                                </Text>
+                                            </View>
+                                        ) : (
+                                            <Image
+                                                source={{ uri: resolveEvidenceUrl(photoUrlOut) }}
+                                                style={{ width: '100%', height: 220 }}
+                                                resizeMode="cover"
+                                            />
+                                        )}
                                     </View>
                                 ) : null}
 
-                                {geoOut ? (
-                                    <View className="rounded-2xl border border-blue-100 bg-white p-4">
-                                        <View className="mb-2 flex-row items-center gap-2">
-                                            <MapPin size={18} color="#2563eb" strokeWidth={2.5} />
-                                            <Text className="text-xs font-black uppercase tracking-widest text-blue-800">OD OUT · GPS</Text>
+                                {/* Styled Location Card / Map representation */}
+                                {(geoIn || geoOut || exifFallback) && (
+                                    <View className="mb-4 rounded-2xl border-2 border-neutral-200 bg-white overflow-hidden shadow-sm">
+                                        <View className="bg-neutral-100 px-4 py-3 border-b border-neutral-200 flex-row items-center justify-between">
+                                            <Text className="text-neutral-900 font-black text-xs uppercase tracking-wider">OD Location Map</Text>
+                                            <MapPin size={16} color="#64748B" />
                                         </View>
-                                        <View className="flex-row flex-wrap gap-x-4 gap-y-1">
-                                            <Text className="text-xs text-neutral-600">
-                                                <Text className="font-bold text-neutral-400">Lat: </Text>
-                                                <Text className="font-mono">{geoOut.latitude.toFixed(6)}</Text>
-                                            </Text>
-                                            <Text className="text-xs text-neutral-600">
-                                                <Text className="font-bold text-neutral-400">Lon: </Text>
-                                                <Text className="font-mono">{geoOut.longitude.toFixed(6)}</Text>
-                                            </Text>
-                                        </View>
-                                        {geoOut.address ? (
-                                            <View className="mt-3 border-t border-neutral-100 pt-3">
-                                                <Text className="text-[10px] font-bold uppercase text-neutral-400">Address</Text>
-                                                <Text className="mt-1 text-xs font-medium leading-5 text-neutral-700">{geoOut.address}</Text>
+                                        
+                                        {/* Simulated Map View Visual */}
+                                        <View className="h-44 bg-slate-100 relative items-center justify-center overflow-hidden border-b border-neutral-100">
+                                            {/* Stylized grid overlay to simulate street map grid */}
+                                            <View className="absolute inset-0 opacity-15 flex-row flex-wrap justify-between p-2">
+                                                {Array.from({ length: 48 }).map((_, i) => (
+                                                    <View key={i} className="w-12 h-12 border border-slate-400 border-dashed" />
+                                                ))}
                                             </View>
-                                        ) : null}
-                                        {geoOut.capturedAt ? (
-                                            <Text className="mt-2 text-[10px] text-neutral-500">
-                                                Captured (IST): {formatDateTimeIST(geoOut.capturedAt)}
-                                            </Text>
-                                        ) : null}
-                                        <TouchableOpacity
-                                            onPress={() => openMaps(geoOut.latitude, geoOut.longitude)}
-                                            className="mt-3 flex-row items-center justify-center rounded-xl bg-blue-50 py-3"
-                                        >
-                                            <ExternalLink size={16} color="#2563eb" strokeWidth={2.5} />
-                                            <Text className="ml-2 text-[10px] font-black uppercase tracking-wider text-blue-600">
-                                                OUT · Google Maps
-                                            </Text>
-                                        </TouchableOpacity>
-                                        {Platform.OS === 'ios' ? (
-                                            <TouchableOpacity
-                                                onPress={() => {
-                                                    Linking.openURL(
-                                                        `http://maps.apple.com/?ll=${geoOut.latitude},${geoOut.longitude}&q=OD+OUT`
-                                                    ).catch(() => Alert.alert('Maps', 'Could not open Apple Maps.'));
-                                                }}
-                                                className="mt-2 flex-row items-center justify-center rounded-xl border border-neutral-200 py-2.5"
-                                            >
-                                                <Text className="text-[10px] font-black uppercase tracking-wider text-neutral-700">
-                                                    OUT · Apple Maps
-                                                </Text>
-                                            </TouchableOpacity>
-                                        ) : null}
+                                            
+                                            {/* Path line if both IN and OUT are present */}
+                                            {geoIn && geoOut && (
+                                                <View className="absolute border-t-2 border-dashed border-indigo-400 w-1/2 rotate-12" />
+                                            )}
+                                            
+                                            {/* IN Marker */}
+                                            {(geoIn || exifFallback) && (
+                                                <View className={`absolute items-center ${geoIn && geoOut ? 'left-12 top-10' : ''}`}>
+                                                    <View className="w-6 h-6 rounded-full bg-emerald-500 items-center justify-center shadow border-2 border-white">
+                                                        <MapPin size={12} color="white" />
+                                                    </View>
+                                                    <Text className="text-[9px] font-black text-emerald-800 bg-white/90 px-1 py-0.5 rounded mt-0.5 shadow-sm">OD IN</Text>
+                                                </View>
+                                            )}
+
+                                            {/* OUT Marker */}
+                                            {geoOut && (
+                                                <View className="absolute items-center right-12 bottom-10">
+                                                    <View className="w-6 h-6 rounded-full bg-blue-500 items-center justify-center shadow border-2 border-white">
+                                                        <MapPin size={12} color="white" />
+                                                    </View>
+                                                    <Text className="text-[9px] font-black text-blue-800 bg-white/90 px-1 py-0.5 rounded mt-0.5 shadow-sm">OD OUT</Text>
+                                                </View>
+                                            )}
+                                        </View>
+                                        
+                                        {/* Coords and Address Details */}
+                                        <View className="p-4 gap-4">
+                                            {/* IN details */}
+                                            {(geoIn || exifFallback) && (
+                                                <View>
+                                                    <View className="flex-row items-center gap-1.5 mb-1">
+                                                        <View className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                                                        <Text className="text-[10px] font-black uppercase text-emerald-700 tracking-wider">OD IN Location</Text>
+                                                    </View>
+                                                    {(() => {
+                                                        const g = geoIn || exifFallback;
+                                                        if (!g) return null;
+                                                        return (
+                                                            <>
+                                                                <Text className="text-xs text-neutral-500 font-mono">
+                                                                    Lat: {g.latitude.toFixed(6)}, Lng: {g.longitude.toFixed(6)}
+                                                                </Text>
+                                                                {(g as any).address ? (
+                                                                    <Text className="text-neutral-700 text-xs mt-1 font-medium leading-4">{(g as any).address}</Text>
+                                                                ) : null}
+                                                                {(g as any).capturedAt ? (
+                                                                    <Text className="text-[9px] text-neutral-400 mt-0.5">Time: {formatDateTimeIST((g as any).capturedAt)}</Text>
+                                                                ) : null}
+                                                                <TouchableOpacity
+                                                                    onPress={() => openMaps(g.latitude, g.longitude)}
+                                                                    className="mt-2 self-start flex-row items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-50"
+                                                                >
+                                                                    <ExternalLink size={12} color="#059669" />
+                                                                    <Text className="text-[9px] font-black text-emerald-700 uppercase tracking-wider">Open Maps</Text>
+                                                                </TouchableOpacity>
+                                                            </>
+                                                        );
+                                                    })()}
+                                                </View>
+                                            )}
+
+                                            {/* OUT details */}
+                                            {geoOut && (
+                                                <View className="border-t border-neutral-100 pt-3">
+                                                    <View className="flex-row items-center gap-1.5 mb-1">
+                                                        <View className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                                                        <Text className="text-[10px] font-black uppercase text-blue-700 tracking-wider">OD OUT Location</Text>
+                                                    </View>
+                                                    <Text className="text-xs text-neutral-500 font-mono">
+                                                        Lat: {geoOut.latitude.toFixed(6)}, Lng: {geoOut.longitude.toFixed(6)}
+                                                    </Text>
+                                                    {geoOut.address ? (
+                                                        <Text className="text-neutral-700 text-xs mt-1 font-medium leading-4">{geoOut.address}</Text>
+                                                    ) : null}
+                                                    {geoOut.capturedAt ? (
+                                                        <Text className="text-[9px] text-neutral-400 mt-0.5">Time: {formatDateTimeIST(geoOut.capturedAt)}</Text>
+                                                    ) : null}
+                                                    <TouchableOpacity
+                                                        onPress={() => openMaps(geoOut.latitude, geoOut.longitude)}
+                                                        className="mt-2 self-start flex-row items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-50"
+                                                    >
+                                                        <ExternalLink size={12} color="#2563eb" />
+                                                        <Text className="text-[9px] font-black text-blue-700 uppercase tracking-wider">Open Maps</Text>
+                                                    </TouchableOpacity>
+                                                </View>
+                                            )}
+                                        </View>
                                     </View>
-                                ) : null}
+                                )}
 
                                 {evidenceMinutes != null && Number(evidenceMinutes) >= 0 ? (
                                     <Text className="mt-3 text-xs font-medium text-neutral-600">

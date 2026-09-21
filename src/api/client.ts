@@ -730,7 +730,18 @@ export const api = {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
             body: form,
         });
-        const json = (await res.json()) as ApiEnvelope & { url?: string; key?: string };
+        const text = await res.text();
+        let json: ApiEnvelope & { url?: string; key?: string };
+        try {
+            json = JSON.parse(text);
+        } catch {
+            return {
+                data: {
+                    success: false,
+                    error: `Server error (${res.status}): ${res.statusText || 'Unexpected non-JSON response from server.'}`,
+                },
+            };
+        }
         return { data: json };
     },
 

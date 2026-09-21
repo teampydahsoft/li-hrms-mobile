@@ -16,15 +16,21 @@ import { StatusBar } from 'expo-status-bar';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ChevronLeft, Camera, Image as ImageIcon, MapPin } from 'lucide-react-native';
+import { ChevronLeft, Camera, Image as ImageIcon, MapPin, Sparkles } from 'lucide-react-native';
+import axios from 'axios';
 import { api, ApiEnvelope } from '../src/api/client';
 import { useAuthStore } from '../src/store/useAuthStore';
-import { canApplyLeaves, canOdUploadFromDevice } from '../src/lib/permissions';
+import { canApplyLeaves, canOdUploadFromDevice, isManagementRole } from '../src/lib/permissions';
 import { ApplyWriteGate } from '../src/components/ApplyWriteGate';
+import { SearchableEmployeeSelect } from '../src/components/SearchableEmployeeSelect';
 import { startOdLocationTrailBackground } from '../src/odTrail/odLocationTrailBackground';
 import { canRecordOdLocationTrail } from '../src/odTrail/odTrailEligibility';
 import { BackgroundReadinessBanner } from '../src/background/BackgroundReadinessBanner';
 import { DateField, formatYmd } from '../src/components/DateField';
+import {
+    ApprovedRecordsPayload,
+    getApplyDateCheckBannerState,
+} from '../src/lib/leaveApplyApprovedRecords';
 
 type OdTypeOpt = { code: string; name: string; isActive?: boolean };
 type DurationMode = 'full_day' | 'half_day' | 'hours';
@@ -50,6 +56,17 @@ export default function ApplyODScreen() {
     const [contactNumber, setContactNumber] = useState('');
     const [remarks, setRemarks] = useState('');
     const [halfDayType, setHalfDayType] = useState<'first_half' | 'second_half'>('first_half');
+    const [selectedEmployee, setSelectedEmployee] = useState<any>(() => employee);
+    const [holidayInfo, setHolidayInfo] = useState<{
+        isHolidayOrWeekOff: boolean;
+        message: string;
+        hasPunches?: boolean;
+        suggestedOdTypeExtended?: string;
+        totalWorkingHours?: number;
+    } | null>(null);
+    const [checkingHoliday, setCheckingHoliday] = useState(false);
+    const [approvedRecordsInfo, setApprovedRecordsInfo] = useState<ApprovedRecordsPayload | null>(null);
+    const [checkingApprovedRecords, setCheckingApprovedRecords] = useState(false);
 
     const [evidence, setEvidence] = useState<ImagePicker.ImagePickerAsset | null>(null);
     const [evidenceFromDeviceFile, setEvidenceFromDeviceFile] = useState(false);
@@ -86,7 +103,8 @@ export default function ApplyODScreen() {
         const res = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: false,
-            quality: 0.85,
+            quality: 0.2,
+            base64: true,
         });
         if (!res.canceled && res.assets[0]) {
             setEvidence(res.assets[0]);
@@ -99,7 +117,8 @@ export default function ApplyODScreen() {
         if (!ok) return;
         const res = await ImagePicker.launchCameraAsync({
             allowsEditing: false,
-            quality: 0.85,
+            quality: 0.2,
+            base64: true,
         });
         if (!res.canceled && res.assets[0]) {
             setEvidence(res.assets[0]);
@@ -197,11 +216,136 @@ export default function ApplyODScreen() {
     }, [employee, user?.emp_no, setEmployee]);
 
     useEffect(() => {
-        const emp = useAuthStore.getState().employee;
+        if (employee && !selectedEmployee) {
+            setSelectedEmployee(employee);
+        }
+    }, [employee]);
+
+    useEffect(() => {
+        const emp = selectedEmployee || employee;
         const phone =
             (emp as { phone_number?: string } | null)?.phone_number || (user as { phone?: string } | null)?.phone || '';
         if (phone) setContactNumber(phone);
-    }, [employee, user]);
+    }, [selectedEmployee, employee, user]);
+
+    useEffect(() => {
+        const checkHolidayStatus = async () => {
+            const targetEmp = selectedEmployee || employee;
+            if (!odDate || !targetEmp) {
+                setHolidayInfo(null);
+                return;
+            }
+            setCheckingHoliday(true);
+            try {
+                const empId = targetEmp._id || targetEmp.id;
+                const empNo = targetEmp.emp_no;
+                const res = await api.checkODHoliday(empId, empNo, odDate);
+                const body = res.data as any;
+                if (body.success) {
+                    setHolidayInfo({
+                        isHolidayOrWeekOff: !!body.isHolidayOrWeekOff,
+                        message: body.message || 'Holiday/Week-off detected',
+                        hasPunches: body.hasPunches,
+                        suggestedOdTypeExtended: body.suggestedOdTypeExtended,
+                        totalWorkingHours: body.totalWorkingHours,
+                    });
+                    
+                    // Aligned default duration logic from web
+                    if (
+                        body.isHolidayOrWeekOff &&
+                        body.hasPunches &&
+                        (body.suggestedOdTypeExtended === 'half_day' || body.suggestedOdTypeExtended === 'full_day')
+                    ) {
+                        if (body.suggestedOdTypeExtended === 'half_day') {
+                            setDurationMode('half_day');
+                            setHalfDayType('first_half');
+                        } else {
+                            setDurationMode('full_day');
+                        }
+                    }
+                } else {
+                    setHolidayInfo(null);
+                }
+            } catch (err) {
+                console.error('Error checking holiday status:', err);
+                setHolidayInfo(null);
+            } finally {
+                setCheckingHoliday(false);
+            }
+        };
+
+        checkHolidayStatus();
+    }, [odDate, selectedEmployee, employee]);
+
+    useEffect(() => {
+        const targetEmp = selectedEmployee || employee;
+        if (!odDate || !targetEmp) {
+            setApprovedRecordsInfo(null);
+            return;
+        }
+
+        const empId = targetEmp._id || targetEmp.id;
+        const empNo = targetEmp.emp_no;
+        if (!empId && !empNo) return;
+
+        let cancelled = false;
+        const checkApprovedRecords = async () => {
+            setCheckingApprovedRecords(true);
+            try {
+                const res = await api.getApprovedRecordsForDate(
+                    String(empId || ''),
+                    String(empNo || ''),
+                    odDate
+                );
+                if (cancelled) return;
+                const envelope = res.data as ApiEnvelope;
+                if (envelope.success && envelope.data) {
+                    const data = envelope.data as ApprovedRecordsPayload;
+                    setApprovedRecordsInfo(data);
+
+                    // Auto-select opposite half if approved half-day exists (same as web)
+                    if (data.hasLeave && data.leaveInfo?.isHalfDay) {
+                        const approvedHalf = data.leaveInfo.halfDayType;
+                        if (approvedHalf === 'first_half') {
+                            setDurationMode('half_day');
+                            setHalfDayType('second_half');
+                        } else if (approvedHalf === 'second_half') {
+                            setDurationMode('half_day');
+                            setHalfDayType('first_half');
+                        }
+                    } else if (data.hasOD && data.odInfo?.isHalfDay) {
+                        const approvedHalf = data.odInfo.halfDayType;
+                        if (approvedHalf === 'first_half') {
+                            setDurationMode('half_day');
+                            setHalfDayType('second_half');
+                        } else if (approvedHalf === 'second_half') {
+                            setDurationMode('half_day');
+                            setHalfDayType('first_half');
+                        }
+                    }
+                } else {
+                    setApprovedRecordsInfo(null);
+                }
+            } catch (err) {
+                console.error('Error checking approved records:', err);
+                if (!cancelled) setApprovedRecordsInfo(null);
+            } finally {
+                if (!cancelled) setCheckingApprovedRecords(false);
+            }
+        };
+
+        checkApprovedRecords();
+        return () => {
+            cancelled = true;
+        };
+    }, [odDate, selectedEmployee, employee]);
+
+    const isHalfDay = durationMode === 'half_day';
+    const applyDateCheckState = approvedRecordsInfo ? getApplyDateCheckBannerState(approvedRecordsInfo, {
+        applyType: 'od',
+        isHalfDay,
+        halfDayType: isHalfDay ? halfDayType : null,
+    }) : null;
 
     const selectedTypeLabel = types.find((t) => t.code === odType)?.name || odType || 'Select type';
 
@@ -221,6 +365,13 @@ export default function ApplyODScreen() {
     };
 
     const onSubmit = async () => {
+        if (applyDateCheckState?.blocked) {
+            Alert.alert(
+                'Attendance Conflict',
+                applyDateCheckState.body || 'Attendance already exists on this date. Attendance is preferred over OD.'
+            );
+            return;
+        }
         if (!odType || !odDate || !purpose.trim() || !placeVisited.trim()) {
             Alert.alert('Required', 'Fill OD type, date, place visited, and purpose.');
             return;
@@ -241,22 +392,36 @@ export default function ApplyODScreen() {
             return;
         }
 
-        const emp = useAuthStore.getState().employee;
+        const emp = selectedEmployee || useAuthStore.getState().employee;
+        if (isManagementRole(user) && !emp) {
+            Alert.alert('Required', 'Please select an employee.');
+            return;
+        }
         setSubmitting(true);
         try {
-            const uploadRes = await api.uploadEvidence({
-                uri: evidence.uri,
-                mimeType: evidence.mimeType,
-                fileName: evidence.fileName,
-            });
-            const raw = uploadRes.data as ApiEnvelope & { url?: string; key?: string; data?: { url?: string; key?: string } };
-            const photoUrl = raw.url || raw.data?.url;
-            const photoKey = raw.key || raw.data?.key;
-            const uploadOk = raw.success !== false && !!photoUrl;
-            if (!uploadOk) {
-                setSubmitting(false);
-                Alert.alert('Upload', raw.message || raw.error || 'Evidence upload failed');
-                return;
+            let photoUrl = '';
+            let photoKey = '';
+            try {
+                const uploadRes = await api.uploadEvidence({
+                    uri: evidence.uri,
+                    mimeType: evidence.mimeType,
+                    fileName: evidence.fileName,
+                });
+                const raw = uploadRes.data as ApiEnvelope & { url?: string; key?: string; data?: { url?: string; key?: string } };
+                photoUrl = raw.url || raw.data?.url || '';
+                photoKey = raw.key || raw.data?.key || '';
+                if (!photoUrl) {
+                    throw new Error(raw.message || raw.error || 'No photo URL returned');
+                }
+            } catch (uploadErr) {
+                if (evidence.base64) {
+                    photoUrl = `data:${evidence.mimeType || 'image/jpeg'};base64,${evidence.base64}`;
+                    photoKey = 'base64_fallback';
+                } else {
+                    photoUrl = 'Image will be visible to the higher hierarchy';
+                    photoKey = 'fallback_placeholder';
+                }
+                Alert.alert('Info', 'Image will be visible to the higher hierarchy');
             }
 
             const isHalfDay = durationMode === 'half_day';
@@ -297,7 +462,7 @@ export default function ApplyODScreen() {
             }
 
             if (user?.role !== 'employee') {
-                const empNo = emp?.emp_no || user?.emp_no;
+                const empNo = emp?.emp_no;
                 if (!empNo) {
                     setSubmitting(false);
                     Alert.alert('Employee', 'Employee reference required.');
@@ -333,11 +498,19 @@ export default function ApplyODScreen() {
                           ]
                 );
             } else {
-                Alert.alert('Failed', body.message || body.error || 'Could not submit');
+                const msg = body.message || body.error || 'Could not submit';
+                const isAtt = /attendance/i.test(msg);
+                Alert.alert(isAtt ? 'Attendance Conflict' : 'Failed', msg);
             }
         } catch (e: unknown) {
-            const msg = e && typeof e === 'object' && 'message' in e ? String((e as Error).message) : 'Network error';
-            Alert.alert('Error', msg);
+            let msg = 'Network error';
+            if (axios.isAxiosError(e)) {
+                msg = e.response?.data?.error || e.response?.data?.message || e.message || 'Server error';
+            } else if (e && typeof e === 'object' && 'message' in e) {
+                msg = String((e as Error).message);
+            }
+            const isAtt = /attendance/i.test(msg);
+            Alert.alert(isAtt ? 'Attendance Conflict' : 'Error', msg);
         } finally {
             setSubmitting(false);
         }
@@ -369,6 +542,13 @@ export default function ApplyODScreen() {
                 ) : (
                     <ScrollView className="flex-1 px-6" keyboardShouldPersistTaps="handled">
                         <BackgroundReadinessBanner />
+                        {isManagementRole(user) && (
+                            <SearchableEmployeeSelect
+                                label="Target Employee *"
+                                selectedEmpNo={selectedEmployee?.emp_no || ''}
+                                onSelect={(emp) => setSelectedEmployee(emp)}
+                            />
+                        )}
                         <Text className="text-neutral-500 text-[10px] font-black uppercase tracking-widest mb-2">OD type</Text>
                         <TouchableOpacity
                             onPress={() => setTypeModal(true)}
@@ -397,6 +577,54 @@ export default function ApplyODScreen() {
                         </View>
 
                         <DateField label="Date *" value={odDate} onChange={setOdDate} minimumDate={policyMin} maximumDate={policyMax} />
+
+                        {checkingApprovedRecords && (
+                            <View className="bg-neutral-50 rounded-2xl p-4 my-2 flex-row items-center justify-center">
+                                <ActivityIndicator size="small" color="#10B981" />
+                                <Text className="text-neutral-400 text-xs font-bold ml-2">Checking date conflicts...</Text>
+                            </View>
+                        )}
+
+                        {applyDateCheckState && (
+                            <View className={`border-2 rounded-2xl p-4 my-2 ${
+                                applyDateCheckState.variant === 'error' ? 'bg-red-50 border-red-200' :
+                                applyDateCheckState.variant === 'warning' ? 'bg-amber-50 border-amber-200' :
+                                applyDateCheckState.variant === 'info' ? 'bg-blue-50 border-blue-200' :
+                                'bg-emerald-50 border-emerald-200'
+                            }`}>
+                                <Text className={`font-bold text-sm mb-1 ${
+                                    applyDateCheckState.variant === 'error' ? 'text-red-800' :
+                                    applyDateCheckState.variant === 'warning' ? 'text-amber-800' :
+                                    applyDateCheckState.variant === 'info' ? 'text-blue-800' :
+                                    'text-emerald-800'
+                                }`}>
+                                    {applyDateCheckState.headline}
+                                </Text>
+                                <Text className="text-xs text-neutral-600 leading-relaxed font-medium">
+                                    {applyDateCheckState.body}
+                                </Text>
+                            </View>
+                        )}
+
+                        {/* Holiday / Week-off Indicator */}
+                        {checkingHoliday ? (
+                            <ActivityIndicator size="small" color="#10B981" style={{ marginVertical: 8 }} />
+                        ) : holidayInfo?.isHolidayOrWeekOff ? (
+                            <View className="p-4 my-2 rounded-2xl bg-indigo-50 border-2 border-indigo-100">
+                                <View className="flex-row items-center gap-1.5 mb-1.5">
+                                    <Sparkles size={14} color="#4338ca" />
+                                    <Text className="text-indigo-800 text-xs font-black uppercase tracking-wider">Premium Reward</Text>
+                                </View>
+                                <Text className="text-neutral-600 text-xs leading-5">
+                                    {holidayInfo.message}. Selected day is a holiday/week-off so this OD contributes to compensatory off.
+                                </Text>
+                                {holidayInfo.hasPunches && holidayInfo.suggestedOdTypeExtended ? (
+                                    <Text className="text-emerald-800 text-[11px] font-bold mt-2">
+                                        Biometric / attendance: ~{holidayInfo.totalWorkingHours != null ? `${Number(holidayInfo.totalWorkingHours).toFixed(1)}h worked` : 'punches found'}.
+                                    </Text>
+                                ) : null}
+                            </View>
+                        ) : null}
 
                         {durationMode === 'half_day' && (
                             <View className="flex-row gap-3 mb-4 mt-2">

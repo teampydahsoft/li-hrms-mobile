@@ -43,7 +43,7 @@ export function getLeaveAttendanceSuggestion(
     return {
       blocked: true,
       suggestion:
-        'Attendance is already marked present for the full day. Correct attendance first, or apply leave only if policy allows.',
+        'Attendance is already marked present for the full day. Correct attendance first, or apply leave/OD only if policy allows.',
     };
   }
 
