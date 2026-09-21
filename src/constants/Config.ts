@@ -2,22 +2,31 @@ import Constants from 'expo-constants';
 
 export type AppVariant = 'unit1' | 'unit2' | 'pydah';
 
-const extra = Constants.expoConfig?.extra as { appVariant?: string } | undefined;
-const rawVariant = (
-    process.env.EXPO_PUBLIC_APP_VARIANT ||
-    extra?.appVariant ||
-    'unit1'
-)
-    .trim()
-    .toLowerCase();
+function detectAppVariant(): AppVariant {
+    // 1. Explicit env var if set during build or local dev
+    const envVar = process.env.EXPO_PUBLIC_APP_VARIANT?.trim().toLowerCase();
+    if (envVar === 'unit2' || envVar === 'pydah') return envVar;
+    if (envVar === 'unit1') return 'unit1';
 
-function resolveAppVariant(value: string): AppVariant {
-    if (value === 'unit2' || value === 'pydah') return value;
+    // 2. Extra config appVariant passed from app.config.js
+    const extraVariant = (Constants.expoConfig?.extra as { appVariant?: string } | undefined)?.appVariant?.trim().toLowerCase();
+    if (extraVariant === 'unit2' || extraVariant === 'pydah') return extraVariant;
+    if (extraVariant === 'unit1') return 'unit1';
+
+    // 3. Native package / bundle identifier / scheme inspection
+    const pkg = (Constants.expoConfig?.android?.package || Constants.expoConfig?.ios?.bundleIdentifier || '').toLowerCase();
+    const rawScheme = Constants.expoConfig?.scheme;
+    const scheme = (Array.isArray(rawScheme) ? rawScheme.join(' ') : rawScheme || '').toLowerCase();
+    const name = (Constants.expoConfig?.name || '').toLowerCase();
+
+    if (pkg.includes('unit2') || scheme.includes('unit2') || name.includes('unit 2')) return 'unit2';
+    if (pkg.includes('pydah') || scheme.includes('pydah') || name.includes('pydah')) return 'pydah';
+
     return 'unit1';
 }
 
-/** Active app flavor. Defaults to Unit 1 so existing builds stay unchanged. */
-export const APP_VARIANT: AppVariant = resolveAppVariant(rawVariant);
+/** Active app flavor. Automatically determined from env, config, or native package ID. */
+export const APP_VARIANT: AppVariant = detectAppVariant();
 
 const VARIANT_CONFIG = {
     unit1: {
