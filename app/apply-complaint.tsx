@@ -121,7 +121,7 @@ export default function ApplyComplaintScreen() {
         const res = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: false,
-            quality: 0.85,
+            quality: 0.25,
         });
         if (!res.canceled && res.assets[0]) {
             setEvidence(res.assets[0]);
@@ -133,7 +133,7 @@ export default function ApplyComplaintScreen() {
         if (!ok) return;
         const res = await ImagePicker.launchCameraAsync({
             allowsEditing: false,
-            quality: 0.85,
+            quality: 0.25,
         });
         if (!res.canceled && res.assets[0]) {
             setEvidence(res.assets[0]);

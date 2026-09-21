@@ -12,7 +12,7 @@
       },
       "env": {
         "EXPO_PUBLIC_APP_VARIANT": "unit1",
-        "EXPO_PUBLIC_API_ORIGIN": "https://hrms-appi.raviburaga.shop"
+        "EXPO_PUBLIC_API_ORIGIN": "https://hrmsu1.sleipl.com"
       }
     },
     "development-simulator": {
@@ -23,7 +23,7 @@
       },
       "env": {
         "EXPO_PUBLIC_APP_VARIANT": "unit1",
-        "EXPO_PUBLIC_API_ORIGIN": "https://hrms-appi.raviburaga.shop"
+        "EXPO_PUBLIC_API_ORIGIN": "https://hrmsu1.sleipl.com"
       }
     },
     "preview": {
@@ -34,7 +34,7 @@
       },
       "env": {
         "EXPO_PUBLIC_APP_VARIANT": "unit1",
-        "EXPO_PUBLIC_API_ORIGIN": "http://103.140.18.28:5000"
+        "EXPO_PUBLIC_API_ORIGIN": "https://hrmsu1.sleipl.com"
       }
     },
     "production": {
@@ -44,7 +44,7 @@
       },
       "env": {
         "EXPO_PUBLIC_APP_VARIANT": "unit1",
-        "EXPO_PUBLIC_API_ORIGIN": "http://103.140.18.28:5000"
+        "EXPO_PUBLIC_API_ORIGIN": "https://hrmsu1.sleipl.com"
       }
     },
     "unit2-development": {

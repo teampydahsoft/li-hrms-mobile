@@ -730,6 +730,14 @@ export const api = {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
             body: form,
         });
+        if (res.status === 413) {
+            return {
+                data: {
+                    success: false,
+                    error: 'Photo payload is too large for the server (413). Please choose a smaller image or retake photo.',
+                },
+            };
+        }
         const text = await res.text();
         let json: ApiEnvelope & { url?: string; key?: string };
         try {
