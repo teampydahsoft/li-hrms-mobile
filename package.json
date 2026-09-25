@@ -27,9 +27,9 @@
     "build:ios:unit1:preview": "npx cross-env EXPO_PUBLIC_APP_VARIANT=unit1 eas build --platform ios --profile preview",
     "build:ios:unit2:preview": "npx cross-env EXPO_PUBLIC_APP_VARIANT=unit2 eas build --platform ios --profile unit2-preview",
     "build:ios:pydah:preview": "npx cross-env EXPO_PUBLIC_APP_VARIANT=pydah eas build --platform ios --profile pydah-preview",
-    "update:unit1": "npx cross-env EXPO_PUBLIC_APP_VARIANT=unit1 eas update --channel production",
-    "update:unit2": "npx cross-env EXPO_PUBLIC_APP_VARIANT=unit2 eas update --channel production-unit2",
-    "update:pydah": "npx cross-env EXPO_PUBLIC_APP_VARIANT=pydah eas update --channel production-pydah"
+    "update:unit1": "npx cross-env EXPO_PUBLIC_APP_VARIANT=unit1 eas update --channel production --clear-cache",
+    "update:unit2": "npx cross-env EXPO_PUBLIC_APP_VARIANT=unit2 eas update --channel production-unit2 --clear-cache",
+    "update:pydah": "npx cross-env EXPO_PUBLIC_APP_VARIANT=pydah eas update --channel production-pydah --clear-cache"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

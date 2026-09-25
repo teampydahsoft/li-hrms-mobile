@@ -9,6 +9,7 @@ import { useAuthStore } from '../src/store/useAuthStore';
 import { useAuthPersistHydrated } from '../src/hooks/useAuthPersistHydrated';
 import { NotificationProvider } from '../src/notifications/NotificationProvider';
 import { useMobileSessionTracker } from '../src/hooks/useMobileSessionTracker';
+import { startGeofenceMonitoring, stopGeofenceMonitoring } from '../src/geofence/geofenceService';
 import '../src/odTrail/odLocationTrailBackground';
 
 function isPublicUnauthenticatedRoute(segments: readonly string[]): boolean {
@@ -39,6 +40,17 @@ function AuthStackGuard() {
     useEffect(() => {
         if (isLoggingOut) unauthKickRef.current = false;
     }, [isLoggingOut]);
+
+    useEffect(() => {
+        if (isAuthenticated) {
+            void startGeofenceMonitoring();
+        } else {
+            void stopGeofenceMonitoring();
+        }
+        return () => {
+            void stopGeofenceMonitoring();
+        };
+    }, [isAuthenticated]);
 
     useEffect(() => {
         if (!hydrated) return;

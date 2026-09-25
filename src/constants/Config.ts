@@ -3,24 +3,30 @@ import Constants from 'expo-constants';
 export type AppVariant = 'unit1' | 'unit2' | 'pydah';
 
 function detectAppVariant(): AppVariant {
-    // 1. Explicit env var if set during build or local dev
-    const envVar = process.env.EXPO_PUBLIC_APP_VARIANT?.trim().toLowerCase();
-    if (envVar === 'unit2' || envVar === 'pydah') return envVar;
-    if (envVar === 'unit1') return 'unit1';
-
-    // 2. Extra config appVariant passed from app.config.js
+    // 1. Extra config appVariant passed from app.config.js manifest at runtime
     const extraVariant = (Constants.expoConfig?.extra as { appVariant?: string } | undefined)?.appVariant?.trim().toLowerCase();
-    if (extraVariant === 'unit2' || extraVariant === 'pydah') return extraVariant;
-    if (extraVariant === 'unit1') return 'unit1';
 
-    // 3. Native package / bundle identifier / scheme inspection
+    // 2. Native package / bundle identifier / scheme / name inspection from manifest
     const pkg = (Constants.expoConfig?.android?.package || Constants.expoConfig?.ios?.bundleIdentifier || '').toLowerCase();
     const rawScheme = Constants.expoConfig?.scheme;
     const scheme = (Array.isArray(rawScheme) ? rawScheme.join(' ') : rawScheme || '').toLowerCase();
     const name = (Constants.expoConfig?.name || '').toLowerCase();
 
-    if (pkg.includes('unit2') || scheme.includes('unit2') || name.includes('unit 2')) return 'unit2';
-    if (pkg.includes('pydah') || scheme.includes('pydah') || name.includes('pydah')) return 'pydah';
+    if (extraVariant === 'pydah' || pkg.includes('pydah') || scheme.includes('pydah') || name.includes('pydah')) {
+        return 'pydah';
+    }
+    if (extraVariant === 'unit2' || pkg.includes('unit2') || scheme.includes('unit2') || name.includes('unit 2')) {
+        return 'unit2';
+    }
+    if (extraVariant === 'unit1' || pkg === 'com.lihrms.mobile') {
+        return 'unit1';
+    }
+
+    // 3. Environment variable fallback
+    const envVar = process.env.EXPO_PUBLIC_APP_VARIANT?.trim().toLowerCase();
+    if (envVar === 'pydah' || envVar === 'unit2' || envVar === 'unit1') {
+        return envVar;
+    }
 
     return 'unit1';
 }

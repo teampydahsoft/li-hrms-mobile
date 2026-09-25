@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState, useEffect } from 'react';
+import * as Location from 'expo-location';
 import { useAuthStore } from '../../src/store/useAuthStore';
 import { api } from '../../src/api/client';
 
@@ -87,8 +88,22 @@ export default function LoginScreenContent() {
         }
 
         setLoading(true);
+        let latitude: number | undefined = undefined;
+        let longitude: number | undefined = undefined;
+
         try {
-            const response = await api.login({ identifier, email: identifier, password });
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status === 'granted') {
+                const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                latitude = pos.coords.latitude;
+                longitude = pos.coords.longitude;
+            }
+        } catch {
+            /* location error ignored if optional */
+        }
+
+        try {
+            const response = await api.login({ identifier, email: identifier, password, latitude, longitude });
             if (response.data.success && response.data.data) {
                 const payload = response.data.data as LoginPayload;
                 const { user } = payload;

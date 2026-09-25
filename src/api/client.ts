@@ -174,7 +174,8 @@ export type LiveAttendanceReportData = {
 };
 
 export const api = {
-    login: (data: { identifier?: string; email?: string; password: string }) => apiClient.post<ApiEnvelope>('/auth/login', data),
+    login: (data: { identifier?: string; email?: string; password: string; latitude?: number; longitude?: number }) => apiClient.post<ApiEnvelope>('/auth/login', data),
+    getGeofenceConfig: () => apiClient.get<ApiEnvelope<{ enabled: boolean; latitude: number; longitude: number; radiusMeters: number; locationName: string }>>('/auth/geofence-config', okThrough4xx),
     getMe: () => apiClient.get<ApiEnvelope>('/auth/me'),
 
     updateProfile: (data: Record<string, unknown>) => apiClient.put<ApiEnvelope>('/users/profile', data),
